@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.resources (
     file_path TEXT DEFAULT NULL,
     file_size TEXT DEFAULT NULL,
     link TEXT DEFAULT NULL,
+    description TEXT DEFAULT NULL,
     downloads INT DEFAULT 0,
     status TEXT DEFAULT 'Published',
     date TEXT DEFAULT NULL,

@@ -39,6 +39,26 @@
       --shadow-lg: 0 20px 40px -15px rgba(215, 25, 32, 0.18);
     }
 
+    @keyframes highlightPulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(215, 25, 32, 0.9);
+        transform: scale(1.02);
+      }
+      50% {
+        box-shadow: 0 0 25px 8px rgba(215, 25, 32, 0.7);
+        transform: scale(1.03);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(215, 25, 32, 0);
+        transform: scale(1);
+      }
+    }
+    .highlight-target {
+      animation: highlightPulse 2.5s ease-in-out 2 alternate !important;
+      border: 2px solid #d71920 !important;
+      z-index: 100 !important;
+    }
+
     body.dark-mode {
       --bg-light: #0b1120;
       --card-bg: #1e293b;
@@ -3522,6 +3542,7 @@
               status: r.status || 'Published',
               fileName: r.file_name || r.fileName || null,
               link: r.link || r.file_path || '#',
+              description: r.description || r.content || '',
               downloads: Number(r.downloads) || 0,
               date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
             }));
@@ -3601,6 +3622,7 @@
             status: item.status,
             file_name: item.fileName || null,
             link: item.link || '#',
+            description: item.description || null,
             downloads: item.downloads || 0,
             date: item.date || new Date().toISOString().split('T')[0]
           };
@@ -3613,6 +3635,7 @@
               status: item.status,
               file_name: item.fileName || null,
               link: item.link || '#',
+              description: item.description || null,
               downloads: item.downloads || 0
             };
             const { error: err2 } = await supabaseClient.from('resources').upsert(safePayload);
@@ -3753,7 +3776,7 @@
         return;
       }
       container.innerHTML = eventsList.map(e => `
-        <div class="event" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; position: relative;">
+        <div id="event-card-${e.id}" data-event-id="${e.id}" class="event" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; position: relative;">
           <div class="date" style="font-size: 11px; font-weight: 700; color: #ff3b42; text-transform: uppercase; margin-bottom: 8px;">
             📅 ${e.date || 'UPCOMING'} • <span style="color: #38bdf8;">${e.location || 'Online'}</span>
           </div>
@@ -3804,8 +3827,11 @@
 
       container.innerHTML = resourcesList.map(r => {
         const catBadgeColor = r.category === 'Past Paper' ? '#ef4444' : r.category === 'Notes' ? '#3b82f6' : '#10b981';
+        const hasFile = r.link && r.link !== '#' && !r.link.startsWith('#');
+        const hasText = r.description && r.description.trim().length > 0;
+
         return `
-          <div class="card resource-card" style="padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
+          <div id="resource-card-${r.id}" data-resource-id="${r.id}" class="card resource-card" style="padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <span style="font-size: 11px; font-weight: 700; color: ${catBadgeColor}; background: rgba(215, 25, 32, 0.08); padding: 4px 10px; border-radius: 6px; text-transform: uppercase; border: 1px solid rgba(215, 25, 32, 0.2);">
@@ -3814,15 +3840,113 @@
                 <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">📥 ${r.downloads || 0} downloads</span>
               </div>
               <h4 style="font-size: 16px; font-weight: 700; margin-bottom: 8px; line-height: 1.4;">${r.title}</h4>
+              
+              ${hasText ? `
+                <div style="background: rgba(15, 23, 42, 0.03); border-left: 3px solid ${catBadgeColor}; padding: 12px; border-radius: 6px; margin: 10px 0 14px 0; font-size: 13.5px; line-height: 1.6; color: var(--text-main); white-space: pre-line; word-break: break-word;">
+                  ${r.description}
+                </div>
+              ` : ''}
+
               ${r.fileName ? `<small style="color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 4px; margin-bottom: 14px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg> ${r.fileName}</small>` : ''}
             </div>
-            <button type="button" onclick="downloadResource(${r.id})" class="btn primary" style="width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              பதிவிறக்குக (Download)
-            </button>
+            
+            ${hasFile ? `
+              <button type="button" onclick="downloadResource(${r.id})" class="btn primary" style="width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                பதிவிறக்குக (Download)
+              </button>
+            ` : `
+              <div style="font-size: 12px; color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 6px; margin-top: 10px; background: rgba(16, 185, 129, 0.08); padding: 8px 12px; border-radius: 6px;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                நேரடி பாட குறிப்புகள் (Direct Notes)
+              </div>
+            `}
           </div>
         `;
       }).join('');
+    }
+
+    function shareItem(type, id) {
+      const baseUrl = window.location.origin + window.location.pathname.replace('admin.html', 'index.html');
+      const shareUrl = `${baseUrl}?type=${type}&id=${id}`;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl).then(() => {
+          showIndexToast('🔗 பகிர்வு இணைப்பு நகலெடுக்கப்பட்டது! (Share link copied!)');
+        }).catch(() => {
+          fallbackCopyTextToClipboard(shareUrl);
+        });
+      } else {
+        fallbackCopyTextToClipboard(shareUrl);
+      }
+    }
+
+    function fallbackCopyTextToClipboard(text) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showIndexToast('🔗 பகிர்வு இணைப்பு நகலெடுக்கப்பட்டது!');
+      } catch (err) {
+        prompt("Share link:", text);
+      }
+      document.body.removeChild(textArea);
+    }
+
+    function showIndexToast(msg) {
+      if (typeof showToast === 'function') {
+        showToast(msg);
+        return;
+      }
+      let container = document.getElementById('index-toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'index-toast-container';
+        container.style.cssText = 'position: fixed; bottom: 24px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; font-family: sans-serif;';
+        document.body.appendChild(container);
+      }
+      const toast = document.createElement('div');
+      toast.style.cssText = 'background: rgba(15, 23, 42, 0.95); color: #fff; border: 1px solid #d71920; padding: 12px 18px; border-radius: 12px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px);';
+      toast.innerHTML = msg;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
+    }
+
+    function handleDeepLinkNavigation() {
+      const params = new URLSearchParams(window.location.search);
+      const type = params.get('type') || (params.has('res') ? 'resource' : params.has('evt') ? 'event' : params.has('ann') ? 'announcement' : null);
+      const id = params.get('id') || params.get('res') || params.get('evt') || params.get('ann');
+
+      if (!type || !id) return;
+
+      setTimeout(() => {
+        let targetEl = null;
+
+        if (type === 'resource') {
+          if (typeof setResourceCategory === 'function') setResourceCategory('All');
+          targetEl = document.getElementById(`resource-card-${id}`);
+          if (!targetEl) targetEl = document.querySelector(`[data-resource-id="${id}"]`);
+        } else if (type === 'event') {
+          targetEl = document.getElementById(`event-card-${id}`);
+          if (!targetEl) targetEl = document.querySelector(`[data-event-id="${id}"]`);
+        } else if (type === 'announcement') {
+          targetEl = document.getElementById(`announcement-card-${id}`);
+          if (!targetEl) targetEl = document.querySelector(`[data-announcement-id="${id}"]`);
+        }
+
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          targetEl.classList.add('highlight-target');
+          setTimeout(() => {
+            targetEl.classList.remove('highlight-target');
+          }, 5000);
+        }
+      }, 600);
     }
 
     function dataURLtoBlob(dataurl) {
@@ -3882,11 +4006,7 @@
       const { res } = getIndexData();
       const item = res.find(r => r.id == id);
       if (!item) {
-        if (typeof showIndexToast === 'function') {
-          showIndexToast('⚠️ கோப்பு கிடைக்கவில்லை (Resource not found).');
-        } else if (typeof customAlert === 'function') {
-          customAlert({ title: 'பிழை (Error)', message: 'வளம் கிடைக்கவில்லை (Resource not found).', iconType: 'danger' });
-        }
+        showIndexToast('⚠️ கோப்பு கிடைக்கவில்லை (Resource not found).');
         return;
       }
 
@@ -3894,17 +4014,7 @@
       const fileName = item.fileName || (item.title ? `${item.title.replace(/[^a-zA-Z0-9_\-]/g, '_')}.pdf` : 'download.pdf');
 
       if (!fileLink || fileLink === '#' || fileLink.startsWith('#')) {
-        if (typeof showIndexToast === 'function') {
-          showIndexToast('⚠️ இந்தக் கோப்பிற்கான பதிவிறக்க இணைப்பு கிடைக்கவில்லை.');
-        } else if (typeof customAlert === 'function') {
-          customAlert({
-            title: 'கோப்பு கிடைக்கவில்லை (File Not Available)',
-            message: `"${item.title}" கோப்பிற்கான பதிவிறக்க இணைப்பு சேர்க்கப்படவில்லை.`,
-            iconType: 'danger'
-          });
-        } else {
-          alert(`"${item.title}" கோப்பிற்கான பதிவிறக்க இணைப்பு சேர்க்கப்படவில்லை.`);
-        }
+        showIndexToast('⚠️ இந்தக் கோப்பிற்கான பதிவிறக்க இணைப்பு கிடைக்கவில்லை.');
         return;
       }
 
@@ -3912,6 +4022,9 @@
       localStorage.setItem('edu_resources', JSON.stringify(res));
       if (typeof EduCloud !== 'undefined') {
         EduCloud.saveResource(item);
+      }
+      if (typeof EduRealtime !== 'undefined') {
+        EduRealtime.notify('DATA_SYNC', { type: 'download', id: item.id, downloads: item.downloads });
       }
       filterResources();
 
@@ -3934,7 +4047,7 @@
         const iconSymbol = isUrgent ? '🔥' : isImportant ? '⚡' : '📢';
 
         return `
-          <div class="announcement-card" style="--card-accent: ${accentColor};">
+          <div id="announcement-card-${a.id}" data-announcement-id="${a.id}" class="announcement-card" style="--card-accent: ${accentColor};">
             <div>
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px;">
                 <span style="background: ${bgBadge}; color: ${accentColor}; border: 1px solid ${accentColor}40; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-flex; align-items: center; gap: 5px;">
@@ -4008,6 +4121,7 @@
       filterResources();
       renderIndexAnnouncements(ann);
       renderIndexSettings(cfg);
+      handleDeepLinkNavigation();
     }
 
     function registerEvent(eventId) {
