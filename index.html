@@ -3412,7 +3412,7 @@
       });
     }
 
-    function sendMessage(e) {
+    async function sendMessage(e) {
       e.preventDefault();
       const name = document.getElementById('name').value;
       const email = document.getElementById('email').value;
@@ -3434,6 +3434,10 @@
         localStorage.setItem('edu_inquiries', JSON.stringify(inquiries));
         localStorage.setItem('edufamily_inquiries', JSON.stringify(inquiries));
 
+        if (typeof EduCloud !== 'undefined') {
+          await EduCloud.saveInquiry(newInq);
+        }
+
         EduRealtime.notify('NEW_INQUIRY', newInq);
         customAlert({
           title: 'செய்தி அனுப்பப்பட்டது!',
@@ -3448,7 +3452,7 @@
       e.target.reset();
     }
 
-    // EDUFAMILY REALTIME COMMUNICATION SYSTEM
+    // EDUFAMILY REALTIME COMMUNICATION & CLOUD SYNC SYSTEM
     const EduRealtime = {
       channel: null,
       listeners: [],
@@ -3468,8 +3472,11 @@
         });
         if (typeof supabaseClient !== 'undefined' && supabaseClient) {
           try {
-            supabaseClient.channel('public:edufamily')
-              .on('postgres_changes', { event: '*', schema: 'public' }, payload => {
+            supabaseClient.channel('public:edufamily_realtime')
+              .on('postgres_changes', { event: '*', schema: 'public' }, async payload => {
+                if (typeof syncIndexCloudData === 'function') {
+                  await syncIndexCloudData();
+                }
                 this.trigger('SUPABASE_CHANGE', payload);
               })
               .subscribe();
@@ -3489,6 +3496,106 @@
         this.listeners.forEach(fn => {
           try { fn(action, payload); } catch (e) { console.error('Realtime callback error:', e); }
         });
+      }
+    };
+
+    // SUPABASE DATABASE CLOUD HELPER
+    const EduCloud = {
+      async fetchAll() {
+        if (!supabaseClient) return null;
+        try {
+          const [resRes, evtRes, annRes, inqRes, cfgRes] = await Promise.allSettled([
+            supabaseClient.from('resources').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('events').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('announcements').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('inquiries').select('*').order('submitted_at', { ascending: false }),
+            supabaseClient.from('portal_settings').select('*')
+          ]);
+
+          let resData = null, evtData = null, annData = null, inqData = null, cfgData = null;
+
+          if (resRes.status === 'fulfilled' && !resRes.value.error && resRes.value.data) {
+            resData = resRes.value.data.map(r => ({
+              id: Number(r.id),
+              title: r.title || '',
+              category: r.category || 'Notes',
+              status: r.status || 'Published',
+              fileName: r.file_name || r.fileName || null,
+              link: r.link || '#',
+              downloads: Number(r.downloads) || 0,
+              date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
+            }));
+          }
+
+          if (evtRes.status === 'fulfilled' && !evtRes.value.error && evtRes.value.data) {
+            evtData = evtRes.value.data.map(e => ({
+              id: Number(e.id),
+              title: e.title || '',
+              date: e.date || e.event_date || '',
+              location: e.location || 'Zoom Online',
+              registered_count: Number(e.registered_count) || 0,
+              status: e.status || 'Upcoming',
+              description: e.description || ''
+            }));
+          }
+
+          if (annRes.status === 'fulfilled' && !annRes.value.error && annRes.value.data) {
+            annData = annRes.value.data.map(a => ({
+              id: Number(a.id),
+              title: a.title || '',
+              priority: a.priority || 'General',
+              audience: a.audience || 'All Students',
+              date: a.date || (a.created_at ? a.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+              is_active: a.is_active !== false
+            }));
+          }
+
+          if (cfgRes.status === 'fulfilled' && !cfgRes.value.error && cfgRes.value.data) {
+            const row = cfgRes.value.data.find(c => c.setting_key === 'edu_portal_settings');
+            if (row && row.setting_value) {
+              try { cfgData = JSON.parse(row.setting_value); } catch(e) {}
+            }
+          }
+
+          return { resData, evtData, annData, inqData, cfgData };
+        } catch(err) {
+          console.warn('Supabase fetchAll exception:', err);
+          return null;
+        }
+      },
+
+      async saveInquiry(item) {
+        if (!supabaseClient) return;
+        try {
+          const payload = {
+            id: item.id,
+            name: item.name,
+            student_name: item.name,
+            email: item.email,
+            subject: item.subject || 'Website Contact Form',
+            message: item.message,
+            status: item.status || 'Unread',
+            date: item.date || new Date().toISOString().split('T')[0]
+          };
+          await supabaseClient.from('inquiries').upsert(payload);
+        } catch(e) { console.warn('Supabase saveInquiry err:', e); }
+      },
+
+      async saveResource(item) {
+        if (!supabaseClient) return;
+        try {
+          const payload = {
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            status: item.status,
+            file_name: item.fileName || null,
+            link: item.link || '#',
+            downloads: item.downloads || 0,
+            date: item.date || new Date().toISOString().split('T')[0]
+          };
+          await supabaseClient.from('resources').upsert(payload);
+        } catch(e) { console.warn('Supabase saveResource err:', e); }
       }
     };
 
@@ -3517,6 +3624,29 @@
 
     if (localStorage.getItem('edu_data_cleaned_v2') !== 'true') {
       cleanLegacyDefaults();
+    }
+
+    async function syncIndexCloudData() {
+      if (typeof EduCloud !== 'undefined') {
+        const cloudData = await EduCloud.fetchAll();
+        if (cloudData) {
+          if (Array.isArray(cloudData.resData)) {
+            localStorage.setItem('edu_resources', JSON.stringify(cloudData.resData));
+          }
+          if (Array.isArray(cloudData.evtData)) {
+            localStorage.setItem('edu_events', JSON.stringify(cloudData.evtData));
+          }
+          if (Array.isArray(cloudData.annData)) {
+            localStorage.setItem('edu_announcements', JSON.stringify(cloudData.annData));
+          }
+          if (cloudData.cfgData) {
+            localStorage.setItem('edu_portal_settings', JSON.stringify(cloudData.cfgData));
+          }
+          if (typeof renderAllDynamicSections === 'function') {
+            renderAllDynamicSections();
+          }
+        }
+      }
     }
 
     let currentResCategory = 'All';
@@ -3558,6 +3688,8 @@
       let cfg = JSON.parse(localStorage.getItem('edu_portal_settings')) || {};
       return { res, evt, ann, cfg };
     }
+
+
 
     function renderIndexEvents(eventsList) {
       const container = document.getElementById('dynamic-events-grid');
@@ -3863,14 +3995,21 @@
       updateThemeIcons(shouldBeDark);
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
       initTheme();
       checkIndexSession();
       EduRealtime.init();
       renderAllDynamicSections();
 
-      EduRealtime.subscribe((action, payload) => {
-        renderAllDynamicSections();
+      // Sync latest cloud data from Supabase DB
+      await syncIndexCloudData();
+
+      EduRealtime.subscribe(async (action, payload) => {
+        if (typeof syncIndexCloudData === 'function') {
+          await syncIndexCloudData();
+        } else {
+          renderAllDynamicSections();
+        }
       });
     });
   </script>

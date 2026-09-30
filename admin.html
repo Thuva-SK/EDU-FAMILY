@@ -1895,27 +1895,7 @@
         flex-shrink: 0 !important;
         white-space: nowrap !important;
       }
-      .mobile-fab-add {
-        display: flex !important;
-        position: fixed !important;
-        bottom: 24px !important;
-        right: 20px !important;
-        width: 52px !important;
-        height: 52px !important;
-        border-radius: 50% !important;
-        background: linear-gradient(135deg, var(--primary) 0%, #e11d48 100%) !important;
-        color: #ffffff !important;
-        border: none !important;
-        align-items: center !important;
-        justify-content: center !important;
-        box-shadow: 0 6px 20px rgba(215, 25, 32, 0.5) !important;
-        z-index: 999 !important;
-        cursor: pointer !important;
-        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
-      }
-      .mobile-fab-add:active {
-        transform: scale(0.92) !important;
-      }
+
       .portal-link-btn,
       .user-dropdown-container {
         display: none !important;
@@ -2860,12 +2840,6 @@
     </div>
   </div>
 
-  <!-- MOBILE FLOATING ACTION BUTTON FOR ADDING DATA -->
-  <button class="mobile-fab-add" onclick="triggerMobileAdd()" title="Add New Data (+)" aria-label="Add New Data (+)">
-    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-    </svg>
-  </button>
 
   <!-- TOAST CONTAINER -->
   <div class="toast-container" id="toast-container"></div>
@@ -2879,7 +2853,7 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
       : null;
 
-    // EDUFAMILY REALTIME COMMUNICATION SYSTEM
+    // EDUFAMILY REALTIME COMMUNICATION & SUPABASE CLOUD SYNC SYSTEM
     const EduRealtime = {
       channel: null,
       listeners: [],
@@ -2899,8 +2873,11 @@
         });
         if (typeof supabaseClient !== 'undefined' && supabaseClient) {
           try {
-            supabaseClient.channel('public:edufamily')
-              .on('postgres_changes', { event: '*', schema: 'public' }, payload => {
+            supabaseClient.channel('public:edufamily_realtime')
+              .on('postgres_changes', { event: '*', schema: 'public' }, async payload => {
+                if (typeof loadCloudData === 'function') {
+                  await loadCloudData();
+                }
                 this.trigger('SUPABASE_CHANGE', payload);
               })
               .subscribe();
@@ -2920,6 +2897,180 @@
         this.listeners.forEach(fn => {
           try { fn(action, payload); } catch(e) { console.error('Realtime callback error:', e); }
         });
+      }
+    };
+
+    // SUPABASE DATABASE CLOUD HELPER
+    const EduCloud = {
+      async fetchAll() {
+        if (!supabaseClient) return null;
+        try {
+          const [resRes, evtRes, annRes, inqRes, cfgRes] = await Promise.allSettled([
+            supabaseClient.from('resources').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('events').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('announcements').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('inquiries').select('*').order('submitted_at', { ascending: false }),
+            supabaseClient.from('portal_settings').select('*')
+          ]);
+
+          let resData = null, evtData = null, annData = null, inqData = null, cfgData = null;
+
+          if (resRes.status === 'fulfilled' && !resRes.value.error && resRes.value.data) {
+            resData = resRes.value.data.map(r => ({
+              id: Number(r.id),
+              title: r.title || '',
+              category: r.category || 'Notes',
+              status: r.status || 'Published',
+              fileName: r.file_name || r.fileName || null,
+              link: r.link || '#',
+              downloads: Number(r.downloads) || 0,
+              date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
+            }));
+          }
+
+          if (evtRes.status === 'fulfilled' && !evtRes.value.error && evtRes.value.data) {
+            evtData = evtRes.value.data.map(e => ({
+              id: Number(e.id),
+              title: e.title || '',
+              date: e.date || e.event_date || '',
+              location: e.location || 'Zoom Online',
+              registered_count: Number(e.registered_count) || 0,
+              status: e.status || 'Upcoming',
+              description: e.description || ''
+            }));
+          }
+
+          if (annRes.status === 'fulfilled' && !annRes.value.error && annRes.value.data) {
+            annData = annRes.value.data.map(a => ({
+              id: Number(a.id),
+              title: a.title || '',
+              priority: a.priority || 'General',
+              audience: a.audience || 'All Students',
+              date: a.date || (a.created_at ? a.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+              is_active: a.is_active !== false
+            }));
+          }
+
+          if (inqRes.status === 'fulfilled' && !inqRes.value.error && inqRes.value.data) {
+            inqData = inqRes.value.data.map(i => ({
+              id: Number(i.id),
+              name: i.name || i.student_name || 'Student',
+              email: i.email || '',
+              subject: i.subject || 'Website Contact Form',
+              message: i.message || '',
+              date: i.date || (i.submitted_at ? i.submitted_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+              status: i.status || 'Unread'
+            }));
+          }
+
+          if (cfgRes.status === 'fulfilled' && !cfgRes.value.error && cfgRes.value.data) {
+            const row = cfgRes.value.data.find(c => c.setting_key === 'edu_portal_settings');
+            if (row && row.setting_value) {
+              try { cfgData = JSON.parse(row.setting_value); } catch(e) {}
+            }
+          }
+
+          return { resData, evtData, annData, inqData, cfgData };
+        } catch(err) {
+          console.warn('Supabase fetchAll exception:', err);
+          return null;
+        }
+      },
+
+      async saveResource(item) {
+        if (!supabaseClient) return;
+        try {
+          const payload = {
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            status: item.status,
+            file_name: item.fileName || null,
+            link: item.link || '#',
+            downloads: item.downloads || 0,
+            date: item.date || new Date().toISOString().split('T')[0]
+          };
+          await supabaseClient.from('resources').upsert(payload);
+        } catch(e) { console.warn('Supabase saveResource err:', e); }
+      },
+
+      async deleteResource(id) {
+        if (!supabaseClient) return;
+        try { await supabaseClient.from('resources').delete().eq('id', id); } catch(e){}
+      },
+
+      async saveEvent(item) {
+        if (!supabaseClient) return;
+        try {
+          const payload = {
+            id: item.id,
+            title: item.title,
+            date: item.date,
+            event_date: item.date,
+            location: item.location,
+            status: item.status || 'Upcoming',
+            registered_count: item.registered_count || 0
+          };
+          await supabaseClient.from('events').upsert(payload);
+        } catch(e) { console.warn('Supabase saveEvent err:', e); }
+      },
+
+      async deleteEvent(id) {
+        if (!supabaseClient) return;
+        try { await supabaseClient.from('events').delete().eq('id', id); } catch(e){}
+      },
+
+      async saveAnnouncement(item) {
+        if (!supabaseClient) return;
+        try {
+          const payload = {
+            id: item.id,
+            title: item.title,
+            priority: item.priority,
+            audience: item.audience,
+            date: item.date || new Date().toISOString().split('T')[0],
+            is_active: item.is_active !== false
+          };
+          await supabaseClient.from('announcements').upsert(payload);
+        } catch(e) { console.warn('Supabase saveAnnouncement err:', e); }
+      },
+
+      async deleteAnnouncement(id) {
+        if (!supabaseClient) return;
+        try { await supabaseClient.from('announcements').delete().eq('id', id); } catch(e){}
+      },
+
+      async saveInquiry(item) {
+        if (!supabaseClient) return;
+        try {
+          const payload = {
+            id: item.id,
+            name: item.name,
+            student_name: item.name,
+            email: item.email,
+            subject: item.subject || 'Website Contact Form',
+            message: item.message,
+            status: item.status || 'Unread',
+            date: item.date || new Date().toISOString().split('T')[0]
+          };
+          await supabaseClient.from('inquiries').upsert(payload);
+        } catch(e) { console.warn('Supabase saveInquiry err:', e); }
+      },
+
+      async deleteInquiry(id) {
+        if (!supabaseClient) return;
+        try { await supabaseClient.from('inquiries').delete().eq('id', id); } catch(e){}
+      },
+
+      async savePortalSettings(settingsObj) {
+        if (!supabaseClient) return;
+        try {
+          const payload = {
+            setting_key: 'edu_portal_settings',
+            setting_value: JSON.stringify(settingsObj)
+          };
+          await supabaseClient.from('portal_settings').upsert(payload, { onConflict: 'setting_key' });
+        } catch(e) { console.warn('Supabase savePortalSettings err:', e); }
       }
     };
 
@@ -2973,6 +3124,37 @@
     if (localStorage.getItem('edu_announcements') === null) localStorage.setItem('edu_announcements', JSON.stringify(announcements));
     if (localStorage.getItem('edu_inquiries') === null) localStorage.setItem('edu_inquiries', JSON.stringify(inquiries));
     if (localStorage.getItem('edufamily_inquiries') === null) localStorage.setItem('edufamily_inquiries', JSON.stringify(inquiries));
+
+    async function loadCloudData() {
+      const cloudData = await EduCloud.fetchAll();
+      if (cloudData) {
+        if (Array.isArray(cloudData.resData)) {
+          resources = cloudData.resData;
+          localStorage.setItem('edu_resources', JSON.stringify(resources));
+        }
+        if (Array.isArray(cloudData.evtData)) {
+          events = cloudData.evtData;
+          localStorage.setItem('edu_events', JSON.stringify(events));
+        }
+        if (Array.isArray(cloudData.annData)) {
+          announcements = cloudData.annData;
+          localStorage.setItem('edu_announcements', JSON.stringify(announcements));
+        }
+        if (Array.isArray(cloudData.inqData)) {
+          inquiries = cloudData.inqData;
+          localStorage.setItem('edu_inquiries', JSON.stringify(inquiries));
+          localStorage.setItem('edufamily_inquiries', JSON.stringify(inquiries));
+        }
+        if (cloudData.cfgData) {
+          localStorage.setItem('edu_portal_settings', JSON.stringify(cloudData.cfgData));
+          if (typeof loadPortalSettings === 'function') loadPortalSettings();
+        }
+        if (typeof updateKpis === 'function') updateKpis();
+        if (typeof renderTables === 'function') renderTables();
+        if (typeof renderCategoryChart === 'function') renderCategoryChart();
+        if (typeof renderTrafficChart === 'function') renderTrafficChart();
+      }
+    }
 
     function saveStorage() {
       localStorage.setItem('edu_resources', JSON.stringify(resources));
@@ -3267,6 +3449,67 @@
       document.getElementById(modalId).classList.remove('open');
     }
 
+    // MODAL OPEN HELPERS
+    function openEventModal() {
+      document.getElementById('evt-title').value = '';
+      document.getElementById('evt-date').value = '';
+      document.getElementById('evt-location').value = '';
+      document.getElementById('event-modal').classList.add('open');
+    }
+
+    function openAnnouncementModal() {
+      document.getElementById('ann-title').value = '';
+      document.getElementById('ann-priority').value = 'General';
+      document.getElementById('ann-audience').value = 'All Students';
+      document.getElementById('announcement-modal').classList.add('open');
+    }
+
+    function handleEventSubmit(e) {
+      e.preventDefault();
+      const title = document.getElementById('evt-title').value.trim();
+      const dateStr = document.getElementById('evt-date').value.trim();
+      const location = document.getElementById('evt-location').value.trim();
+
+      const newEvt = {
+        id: Date.now(),
+        title: title,
+        date: dateStr,
+        location: location,
+        status: 'Upcoming',
+        registered_count: 0
+      };
+
+      events.unshift(newEvt);
+      EduCloud.saveEvent(newEvt);
+      saveStorage();
+      renderTables();
+      closeModal('event-modal');
+      showToast('New Academic Event scheduled & published!');
+    }
+
+    function handleAnnouncementSubmit(e) {
+      e.preventDefault();
+      const title = document.getElementById('ann-title').value.trim();
+      const priority = document.getElementById('ann-priority').value;
+      const audience = document.getElementById('ann-audience').value.trim();
+
+      const newAnn = {
+        id: Date.now(),
+        title: title,
+        priority: priority,
+        audience: audience,
+        date: new Date().toISOString().split('T')[0],
+        is_active: true
+      };
+
+      announcements.unshift(newAnn);
+      EduCloud.saveAnnouncement(newAnn);
+      saveStorage();
+      renderTables();
+      closeModal('announcement-modal');
+      showToast('New Announcement published to portal!');
+    }
+
     function handleResourceSubmit(e) {
       e.preventDefault();
       const id = document.getElementById('resource-edit-id').value;
@@ -3286,10 +3529,11 @@
             item.status = status;
             if (fileName) item.fileName = fileName;
             if (finalLink && finalLink !== '#') item.link = finalLink;
+            EduCloud.saveResource(item);
             showToast('Resource updated successfully!');
           }
         } else {
-          resources.unshift({
+          const newItem = {
             id: Date.now(),
             title: title,
             category: category,
@@ -3298,7 +3542,9 @@
             status: status,
             fileName: fileName || (linkInput ? 'External File' : null),
             link: finalLink
-          });
+          };
+          resources.unshift(newItem);
+          EduCloud.saveResource(newItem);
           showToast(fileName ? 'New Resource published with uploaded file!' : 'New Resource published!');
         }
 
@@ -3386,6 +3632,7 @@
       });
       if (confirmed) {
         resources = resources.filter(r => r.id !== id);
+        EduCloud.deleteResource(id);
         saveStorage();
         renderTables();
       }
@@ -3401,6 +3648,7 @@
       });
       if (confirmed) {
         events = events.filter(e => e.id !== id);
+        EduCloud.deleteEvent(id);
         saveStorage();
         renderTables();
       }
@@ -3416,6 +3664,7 @@
       });
       if (confirmed) {
         announcements = announcements.filter(a => a.id !== id);
+        EduCloud.deleteAnnouncement(id);
         saveStorage();
         renderTables();
       }
@@ -3431,6 +3680,17 @@
       });
       if (confirmed) {
         inquiries = inquiries.filter(i => i.id !== id);
+        EduCloud.deleteInquiry(id);
+        saveStorage();
+        renderTables();
+      }
+    }
+
+    function markInquiryRead(id) {
+      const inq = inquiries.find(i => i.id === id);
+      if (inq) {
+        inq.status = inq.status === 'Read' ? 'Unread' : 'Read';
+        EduCloud.saveInquiry(inq);
         saveStorage();
         renderTables();
       }
@@ -3457,6 +3717,7 @@
 
       const portalSettings = { title, tagline, topbarMsg, phone, email, youtube, whatsapp, online, pulse };
       localStorage.setItem('edu_portal_settings', JSON.stringify(portalSettings));
+      EduCloud.savePortalSettings(portalSettings);
       
       showToast('Portal Settings & Branding Saved!');
     }
@@ -3971,7 +4232,7 @@
     }
 
     // ON PAGE LOAD
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
       initAdminTheme();
       checkAdminAuth();
       loadPortalSettings();
@@ -3981,6 +4242,9 @@
       renderAdminUsersTable();
       renderCategoryChart();
       renderTrafficChart();
+
+      // Trigger Cloud Data Sync from Supabase
+      await loadCloudData();
 
       updateRealtimeClock();
       setInterval(updateRealtimeClock, 1000);
