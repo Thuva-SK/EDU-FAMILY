@@ -3521,7 +3521,7 @@
               category: r.category || 'Notes',
               status: r.status || 'Published',
               fileName: r.file_name || r.fileName || null,
-              link: r.link || '#',
+              link: r.link || r.file_path || '#',
               downloads: Number(r.downloads) || 0,
               date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
             }));
@@ -3612,9 +3612,22 @@
               category: item.category,
               status: item.status,
               file_name: item.fileName || null,
+              link: item.link || '#',
               downloads: item.downloads || 0
             };
-            await supabaseClient.from('resources').upsert(safePayload);
+            const { error: err2 } = await supabaseClient.from('resources').upsert(safePayload);
+            if (err2 && err2.code === 'PGRST204') {
+              const safePayload2 = {
+                id: item.id,
+                title: item.title,
+                category: item.category,
+                status: item.status,
+                file_name: item.fileName || null,
+                file_path: item.link || '#',
+                downloads: item.downloads || 0
+              };
+              await supabaseClient.from('resources').upsert(safePayload2);
+            }
           }
         } catch(e) { console.warn('Supabase saveResource err:', e); }
       }
