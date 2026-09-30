@@ -2427,45 +2427,49 @@
     };
 
     // INITIAL DEFAULT RICH DATA MODELS
-    const defaultResources = [
-      { id: 1710000001, title: 'G.C.E O/L கணிதம் (Mathematics) கடந்த கால வினாத்தாள்கள் 2018 - 2023', category: 'Past Paper', downloads: 142, date: '2026-09-20', status: 'Published', fileName: 'OL_Maths_PastPapers_2018_2023.pdf', link: '#' },
-      { id: 1710000002, title: 'G.C.E A/L பௌதிகவியல் (Physics) அலகு ரீதியான விரிவான குறிப்புகள்', category: 'Notes', downloads: 98, date: '2026-09-22', status: 'Published', fileName: 'AL_Physics_Unit_Notes.pdf', link: '#' },
-      { id: 1710000003, title: '2026 பொது அறிவு (General Knowledge) வினா விடைத் தொகுப்பு', category: 'GK', downloads: 76, date: '2026-09-24', status: 'Published', fileName: 'GK_Questions_2026.pdf', link: '#' },
-      { id: 1710000004, title: 'G.C.E O/L விஞ்ஞானம் (Science) மாதிரி வினாத்தாள்கள் 2024', category: 'Notes', downloads: 215, date: '2026-09-26', status: 'Published', fileName: 'OL_Science_Model_Paper_2024.pdf', link: '#' }
-    ];
+    const defaultResources = [];
+    const defaultEvents = [];
+    const defaultAnnouncements = [];
+    const defaultInquiries = [];
 
-    const defaultEvents = [
-      { id: 1720000001, title: 'G.C.E O/L கணிதப் பரீட்சைக்கான வழிகாட்டல் கருத்தரங்கு', date: '2026-10-15', location: 'Zoom Online Live', registered: 48, status: 'Upcoming', description: 'O/L மாணவர்களுக்கான வினாத்தாள் அமைப்பு மற்றும் புள்ளி வழங்கும் முறை தொடர்பான இலவச கருத்தரங்கு.' },
-      { id: 1720000002, title: 'A/L உயிரியல் (Biology) மாதிரி பரீட்சை & மதிப்பீடு', date: '2026-10-22', location: 'Edufamily Online Hall', registered: 32, status: 'Upcoming', description: 'A/L மாணவர்களுக்கான வினாத்தாள் வழிகாட்டல் மற்றும் விடைத்தாள் மதிப்பீடு.' },
-      { id: 1720000003, title: 'உயர் கல்வி மற்றும் பல்கலைக்கழக வாய்ப்புகள் பற்றிய விழிப்புணர்வு', date: '2026-11-05', location: 'Zoom & YouTube Live', registered: 85, status: 'Upcoming', description: 'பல்கலைக்கழக நுழைவு மற்றும் தொழிற்கல்வி வழிகாட்டல் நிகழ்வு.' }
-    ];
+    const legacyDefaultIds = [1710000001, 1710000002, 1710000003, 1710000004, 1720000001, 1720000002, 1720000003, 1730000001, 1730000002, 1730000003, 1740000001];
 
-    const defaultAnnouncements = [
-      { id: 1730000001, title: 'G.C.E O/L 2026 பரீட்சை கால அட்டவணை மற்றும் முக்கிய அறிவிப்பு', priority: 'Urgent', date: '2026-09-25', audience: 'O/L Students' },
-      { id: 1730000002, title: 'இலவச ஆன்லைன் கருத்தரங்குகளுக்கான புதிய பதிவுகள் ஆரம்பம்', priority: 'Important', date: '2026-09-20', audience: 'All Students' },
-      { id: 1730000003, title: 'Edufamily WhatsApp சேனலில் இணைந்து புதிய வளங்களைப் பெறுங்கள்', priority: 'General', date: '2026-09-15', audience: 'Public' }
-    ];
+    function cleanAdminLegacyDefaults() {
+      ['edu_resources', 'edu_events', 'edu_announcements', 'edu_inquiries', 'edufamily_inquiries'].forEach(key => {
+        const itemStr = localStorage.getItem(key);
+        if (itemStr) {
+          try {
+            const arr = JSON.parse(itemStr);
+            if (Array.isArray(arr)) {
+              const cleaned = arr.filter(i => !legacyDefaultIds.includes(i.id));
+              localStorage.setItem(key, JSON.stringify(cleaned));
+            }
+          } catch (e) { }
+        }
+      });
+      localStorage.setItem('edu_data_cleaned_v2', 'true');
+    }
 
-    const defaultInquiries = [
-      { id: 1740000001, name: 'செல்வன் கவின்', email: 'kavin@example.com', subject: 'Website Contact Form', message: 'A/L Physics வகுப்புகள் பற்றிய விபரங்கள் அறிய விரும்புகிறேன்.', date: '2026-09-27', status: 'Unread' }
-    ];
+    if (localStorage.getItem('edu_data_cleaned_v2') !== 'true') {
+      cleanAdminLegacyDefaults();
+    }
 
     // Load or set storage
-    let resources = localStorage.getItem('edu_resources') !== null 
-      ? JSON.parse(localStorage.getItem('edu_resources')) 
-      : defaultResources;
+    let resources = (localStorage.getItem('edu_resources') !== null
+      ? JSON.parse(localStorage.getItem('edu_resources'))
+      : defaultResources).filter(r => !legacyDefaultIds.includes(r.id));
 
-    let events = localStorage.getItem('edu_events') !== null 
-      ? JSON.parse(localStorage.getItem('edu_events')) 
-      : defaultEvents;
+    let events = (localStorage.getItem('edu_events') !== null
+      ? JSON.parse(localStorage.getItem('edu_events'))
+      : defaultEvents).filter(e => !legacyDefaultIds.includes(e.id));
 
-    let announcements = localStorage.getItem('edu_announcements') !== null 
-      ? JSON.parse(localStorage.getItem('edu_announcements')) 
-      : defaultAnnouncements;
+    let announcements = (localStorage.getItem('edu_announcements') !== null
+      ? JSON.parse(localStorage.getItem('edu_announcements'))
+      : defaultAnnouncements).filter(a => !legacyDefaultIds.includes(a.id));
 
-    let inquiries = (localStorage.getItem('edu_inquiries') !== null || localStorage.getItem('edufamily_inquiries') !== null)
-      ? JSON.parse(localStorage.getItem('edu_inquiries') || localStorage.getItem('edufamily_inquiries')) 
-      : defaultInquiries;
+    let inquiries = ((localStorage.getItem('edu_inquiries') !== null || localStorage.getItem('edufamily_inquiries') !== null)
+      ? JSON.parse(localStorage.getItem('edu_inquiries') || localStorage.getItem('edufamily_inquiries'))
+      : defaultInquiries).filter(i => !legacyDefaultIds.includes(i.id));
 
     if (localStorage.getItem('edu_resources') === null) localStorage.setItem('edu_resources', JSON.stringify(resources));
     if (localStorage.getItem('edu_events') === null) localStorage.setItem('edu_events', JSON.stringify(events));

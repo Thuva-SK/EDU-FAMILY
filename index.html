@@ -1373,6 +1373,7 @@
 
     .contact-details {
       flex-grow: 1;
+      min-width: 0;
       display: flex;
       flex-direction: column;
     }
@@ -1390,6 +1391,8 @@
       font-weight: 700;
       color: var(--dark-navy);
       margin-top: 2px;
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
 
     body.dark-mode .contact-val {
@@ -2074,6 +2077,64 @@
         padding: 60px 18px;
       }
 
+      .contact {
+        padding: 50px 0;
+      }
+
+      .contact-grid {
+        gap: 24px;
+      }
+
+      .contact-info-wrapper {
+        padding: 24px 18px;
+        border-radius: 16px;
+      }
+
+      .contact-form-glass-card {
+        padding: 24px 18px;
+        border-radius: 16px;
+        margin-bottom: 12px;
+      }
+
+      .contact-info-header h3,
+      .contact-form-glass-card h3 {
+        font-size: 20px;
+      }
+
+      .contact-info-header p,
+      .contact-form-glass-card p {
+        font-size: 13px;
+        margin-bottom: 18px;
+      }
+
+      .modern-contact-form {
+        gap: 16px;
+      }
+
+      .input-with-icon input,
+      .input-with-icon textarea {
+        font-size: 16px !important; /* Prevents auto-zoom on iOS Safari */
+        padding: 12px 14px 12px 42px;
+      }
+
+      .input-with-icon svg {
+        left: 14px;
+      }
+
+      .float-wa {
+        right: 16px;
+        bottom: 16px;
+        width: 52px;
+        height: 52px;
+        font-size: 24px;
+        box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4);
+      }
+
+      .float-wa svg {
+        width: 26px;
+        height: 26px;
+      }
+
       .hero {
         padding: 50px 18px 70px;
       }
@@ -2111,6 +2172,67 @@
 
       .btn {
         width: 100%;
+      }
+
+      .contact-info-wrapper,
+      .contact-form-glass-card {
+        padding: 20px 14px;
+        border-radius: 14px;
+      }
+
+      .contact-cards-list {
+        gap: 12px;
+      }
+
+      .contact-card {
+        padding: 12px 14px;
+        gap: 12px;
+        border-radius: 12px;
+      }
+
+      .contact-icon-wrapper {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+      }
+
+      .contact-icon-wrapper svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .contact-label {
+        font-size: 11px;
+      }
+
+      .contact-val {
+        font-size: 13.5px;
+      }
+
+      .contact-action-btn {
+        padding: 6px 12px;
+        font-size: 11px;
+        border-radius: 16px;
+        flex-shrink: 0;
+      }
+
+      .submit-contact-btn {
+        padding: 12px 18px;
+        font-size: 14px;
+        border-radius: 10px;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .contact-card {
+        flex-wrap: wrap;
+        row-gap: 8px;
+      }
+
+      .contact-action-btn {
+        width: 100%;
+        justify-content: center;
+        margin-top: 2px;
       }
     }
 
@@ -3227,25 +3349,32 @@
       }
     };
 
-    // DEFAULT RICH TAMIL EDUCATIONAL DATA
-    const defaultResources = [
-      { id: 1710000001, title: 'G.C.E O/L கணிதம் (Mathematics) கடந்த கால வினாத்தாள்கள் 2018 - 2023', category: 'Past Paper', downloads: 142, date: '2026-09-20', status: 'Published', fileName: 'OL_Maths_PastPapers_2018_2023.pdf', link: '#' },
-      { id: 1710000002, title: 'G.C.E A/L பௌதிகவியல் (Physics) அலகு ரீதியான விரிவான குறிப்புகள்', category: 'Notes', downloads: 98, date: '2026-09-22', status: 'Published', fileName: 'AL_Physics_Unit_Notes.pdf', link: '#' },
-      { id: 1710000003, title: '2026 பொது அறிவு (General Knowledge) வினா விடைத் தொகுப்பு', category: 'GK', downloads: 76, date: '2026-09-24', status: 'Published', fileName: 'GK_Questions_2026.pdf', link: '#' },
-      { id: 1710000004, title: 'G.C.E O/L விஞ்ஞானம் (Science) மாதிரி வினாத்தாள்கள் 2024', category: 'Notes', downloads: 215, date: '2026-09-26', status: 'Published', fileName: 'OL_Science_Model_Paper_2024.pdf', link: '#' }
-    ];
+    // DEFAULT TAMIL EDUCATIONAL DATA & LEGACY CLEANUP
+    const defaultResources = [];
+    const defaultEvents = [];
+    const defaultAnnouncements = [];
 
-    const defaultEvents = [
-      { id: 1720000001, title: 'G.C.E O/L கணிதப் பரீட்சைக்கான வழிகாட்டல் கருத்தரங்கு', date: '2026-10-15', location: 'Zoom Online Live', registered: 48, status: 'Upcoming', description: 'O/L மாணவர்களுக்கான வினாத்தாள் அமைப்பு மற்றும் புள்ளி வழங்கும் முறை தொடர்பான இலவச கருத்தரங்கு.' },
-      { id: 1720000002, title: 'A/L உயிரியல் (Biology) மாதிரி பரீட்சை & மதிப்பீடு', date: '2026-10-22', location: 'Edufamily Online Hall', registered: 32, status: 'Upcoming', description: 'A/L மாணவர்களுக்கான வினாத்தாள் வழிகாட்டல் மற்றும் விடைத்தாள் மதிப்பீடு.' },
-      { id: 1720000003, title: 'உயர் கல்வி மற்றும் பல்கலைக்கழக வாய்ப்புகள் பற்றிய விழிப்புணர்வு', date: '2026-11-05', location: 'Zoom & YouTube Live', registered: 85, status: 'Upcoming', description: 'பல்கலைக்கழக நுழைவு மற்றும் தொழிற்கல்வி வழிகாட்டல் நிகழ்வு.' }
-    ];
+    const legacyDefaultIds = [1710000001, 1710000002, 1710000003, 1710000004, 1720000001, 1720000002, 1720000003, 1730000001, 1730000002, 1730000003, 1740000001];
 
-    const defaultAnnouncements = [
-      { id: 1730000001, title: 'G.C.E O/L 2026 பரீட்சை கால அட்டவணை மற்றும் முக்கிய அறிவிப்பு', priority: 'Urgent', date: '2026-09-25', audience: 'O/L Students' },
-      { id: 1730000002, title: 'இலவச ஆன்லைன் கருத்தரங்குகளுக்கான புதிய பதிவுகள் ஆரம்பம்', priority: 'Important', date: '2026-09-20', audience: 'All Students' },
-      { id: 1730000003, title: 'Edufamily WhatsApp சேனலில் இணைந்து புதிய வளங்களைப் பெறுங்கள்', priority: 'General', date: '2026-09-15', audience: 'Public' }
-    ];
+    function cleanLegacyDefaults() {
+      ['edu_resources', 'edu_events', 'edu_announcements', 'edu_inquiries', 'edufamily_inquiries'].forEach(key => {
+        const itemStr = localStorage.getItem(key);
+        if (itemStr) {
+          try {
+            const arr = JSON.parse(itemStr);
+            if (Array.isArray(arr)) {
+              const cleaned = arr.filter(i => !legacyDefaultIds.includes(i.id));
+              localStorage.setItem(key, JSON.stringify(cleaned));
+            }
+          } catch (e) { }
+        }
+      });
+      localStorage.setItem('edu_data_cleaned_v2', 'true');
+    }
+
+    if (localStorage.getItem('edu_data_cleaned_v2') !== 'true') {
+      cleanLegacyDefaults();
+    }
 
     let currentResCategory = 'All';
 
@@ -3255,7 +3384,10 @@
         res = defaultResources;
         localStorage.setItem('edu_resources', JSON.stringify(res));
       } else {
-        try { res = JSON.parse(localStorage.getItem('edu_resources')) || []; } catch (e) { res = defaultResources; }
+        try {
+          res = JSON.parse(localStorage.getItem('edu_resources')) || [];
+          res = res.filter(r => !legacyDefaultIds.includes(r.id));
+        } catch (e) { res = []; }
       }
 
       let evt;
@@ -3263,7 +3395,10 @@
         evt = defaultEvents;
         localStorage.setItem('edu_events', JSON.stringify(evt));
       } else {
-        try { evt = JSON.parse(localStorage.getItem('edu_events')) || []; } catch (e) { evt = defaultEvents; }
+        try {
+          evt = JSON.parse(localStorage.getItem('edu_events')) || [];
+          evt = evt.filter(e => !legacyDefaultIds.includes(e.id));
+        } catch (e) { evt = []; }
       }
 
       let ann;
@@ -3271,7 +3406,10 @@
         ann = defaultAnnouncements;
         localStorage.setItem('edu_announcements', JSON.stringify(ann));
       } else {
-        try { ann = JSON.parse(localStorage.getItem('edu_announcements')) || []; } catch (e) { ann = defaultAnnouncements; }
+        try {
+          ann = JSON.parse(localStorage.getItem('edu_announcements')) || [];
+          ann = ann.filter(a => !legacyDefaultIds.includes(a.id));
+        } catch (e) { ann = []; }
       }
 
       let cfg = JSON.parse(localStorage.getItem('edu_portal_settings')) || {};
