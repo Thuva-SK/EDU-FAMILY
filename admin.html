@@ -317,6 +317,7 @@
     /* MAIN CONTAINER */
     main.main-wrapper {
       margin-left: var(--sidebar-width);
+      padding-top: var(--header-height);
       flex: 1;
       display: flex;
       flex-direction: column;
@@ -332,10 +333,15 @@
       align-items: center;
       justify-content: space-between;
       padding: 0 28px;
-      position: sticky;
+      position: fixed;
       top: 0;
+      right: 0;
+      left: var(--sidebar-width);
       z-index: 90;
-      backdrop-filter: blur(10px);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .header-left {
@@ -1742,17 +1748,24 @@
       }
       main.main-wrapper {
         margin-left: 0 !important;
+        padding-top: 60px !important;
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
-        overflow-x: hidden !important;
       }
       header.top-header {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
         padding: 0 14px !important;
         height: 60px !important;
         width: 100% !important;
         max-width: 100% !important;
+        z-index: 95 !important;
         box-sizing: border-box !important;
+        background-color: var(--bg-surface) !important;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
       }
       .header-search {
         display: none !important;
@@ -1840,8 +1853,68 @@
         font-size: 14px !important;
         box-sizing: border-box !important;
       }
-      .quick-add-btn {
+      header.top-header .quick-add-btn {
         display: none !important;
+      }
+      .data-card-header {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        padding: 14px 14px !important;
+        gap: 10px !important;
+      }
+      .data-card-header > div:first-child {
+        flex: 1;
+        min-width: 0;
+      }
+      .data-card-header .chart-title {
+        font-size: 15px !important;
+      }
+      .data-card-header .chart-subtitle {
+        font-size: 11px !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .data-card-header .quick-add-btn,
+      .data-card-header .table-add-btn,
+      .data-card-actions .quick-add-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 6px !important;
+        padding: 8px 14px !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        border-radius: var(--radius-full) !important;
+        background: var(--primary) !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 12px rgba(215, 25, 32, 0.3) !important;
+        cursor: pointer !important;
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+      }
+      .mobile-fab-add {
+        display: flex !important;
+        position: fixed !important;
+        bottom: 24px !important;
+        right: 20px !important;
+        width: 52px !important;
+        height: 52px !important;
+        border-radius: 50% !important;
+        background: linear-gradient(135deg, var(--primary) 0%, #e11d48 100%) !important;
+        color: #ffffff !important;
+        border: none !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 6px 20px rgba(215, 25, 32, 0.5) !important;
+        z-index: 999 !important;
+        cursor: pointer !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+      }
+      .mobile-fab-add:active {
+        transform: scale(0.92) !important;
       }
       .portal-link-btn,
       .user-dropdown-container {
@@ -1986,7 +2059,7 @@
         box-sizing: border-box !important;
         width: 100% !important;
       }
-      .quick-add-btn {
+      header.top-header .quick-add-btn {
         display: none !important;
       }
       .content-area {
@@ -2263,8 +2336,11 @@
               <h3 class="chart-title">Educational Resources Library</h3>
               <div class="chart-subtitle">Manage model papers, study guides, notes & syllabus</div>
             </div>
-            <div style="display: flex; gap: 10px;">
-              <button class="quick-add-btn" onclick="openResourceModal()">+ Add New Resource</button>
+            <div class="data-card-actions">
+              <button class="quick-add-btn table-add-btn" onclick="openResourceModal()" title="Add New Resource" aria-label="Add New Resource">
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                <span class="btn-text">Add New Resource</span>
+              </button>
             </div>
           </div>
 
@@ -2296,7 +2372,12 @@
               <h3 class="chart-title">Events & Live Webinars</h3>
               <div class="chart-subtitle">Schedule and manage academic events for Tamil students</div>
             </div>
-            <button class="quick-add-btn" onclick="openEventModal()">+ Schedule Event</button>
+            <div class="data-card-actions">
+              <button class="quick-add-btn table-add-btn" onclick="openEventModal()" title="Schedule Event" aria-label="Schedule Event">
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                <span class="btn-text">Schedule Event</span>
+              </button>
+            </div>
           </div>
 
           <div class="table-container">
@@ -2326,7 +2407,12 @@
               <h3 class="chart-title">Announcements & News Flash</h3>
               <div class="chart-subtitle">Publish instant updates to the website topbar & homepage</div>
             </div>
-            <button class="quick-add-btn" onclick="openAnnouncementModal()">+ New Announcement</button>
+            <div class="data-card-actions">
+              <button class="quick-add-btn table-add-btn" onclick="openAnnouncementModal()" title="New Announcement" aria-label="New Announcement">
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                <span class="btn-text">New Announcement</span>
+              </button>
+            </div>
           </div>
 
           <div class="table-container">
@@ -2546,8 +2632,9 @@
                 </div>
                 Admin Accounts & User Roles
               </div>
-              <button type="button" class="btn-primary-action" onclick="openNewAdminModal()" style="font-size: 13px; padding: 8px 16px;">
-                + Add New Admin
+              <button type="button" class="btn-primary-action table-add-btn" onclick="openNewAdminModal()" style="font-size: 13px; padding: 8px 16px;" title="Add New Admin" aria-label="Add New Admin">
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                <span class="btn-text">Add New Admin</span>
               </button>
             </div>
 
@@ -2772,6 +2859,13 @@
       </div>
     </div>
   </div>
+
+  <!-- MOBILE FLOATING ACTION BUTTON FOR ADDING DATA -->
+  <button class="mobile-fab-add" onclick="triggerMobileAdd()" title="Add New Data (+)" aria-label="Add New Data (+)">
+    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+    </svg>
+  </button>
 
   <!-- TOAST CONTAINER -->
   <div class="toast-container" id="toast-container"></div>
@@ -3036,7 +3130,15 @@
       // 2. Resources Table
       const resTbody = document.getElementById('resources-tbody');
       resTbody.innerHTML = resources.length === 0
-        ? `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">கல்வி வளங்கள் எதுவும் இல்லை. புதியவற்றைச் சேர்க்க '+ Add New Resource' அழுத்தவும்.</td></tr>`
+        ? `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 30px 16px;">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+              <span>கல்வி வளங்கள் எதுவும் இல்லை.</span>
+              <button class="quick-add-btn" onclick="openResourceModal()" style="font-size: 13px; padding: 8px 18px; display: inline-flex; align-items: center; gap: 6px;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                + Add New Resource
+              </button>
+            </div>
+          </td></tr>`
         : resources.map(res => {
         const catBadgeClass = res.category === 'Notes' ? 'info' : res.category === 'Past Paper' ? 'danger' : 'success';
         const downloadUrl = res.link || '#';
@@ -3063,7 +3165,15 @@
       // 3. Events Table
       const evtTbody = document.getElementById('events-tbody');
       evtTbody.innerHTML = events.length === 0
-        ? `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">நிகழ்வுகள் எதுவும் இல்லை. '+ Schedule Event' அழுத்தவும்.</td></tr>`
+        ? `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px 16px;">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+              <span>நிகழ்வுகள் எதுவும் இல்லை.</span>
+              <button class="quick-add-btn" onclick="openEventModal()" style="font-size: 13px; padding: 8px 18px; display: inline-flex; align-items: center; gap: 6px;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                + Schedule Event
+              </button>
+            </div>
+          </td></tr>`
         : events.map(evt => `
         <tr>
           <td><strong>${evt.title}</strong></td>
@@ -3081,7 +3191,15 @@
       // 4. Announcements Table
       const annTbody = document.getElementById('announcements-tbody');
       annTbody.innerHTML = announcements.length === 0
-        ? `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">அறிவிப்புகள் எதுவும் இல்லை. '+ New Announcement' அழுத்தவும்.</td></tr>`
+        ? `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px 16px;">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+              <span>அறிவிப்புகள் எதுவும் இல்லை.</span>
+              <button class="quick-add-btn" onclick="openAnnouncementModal()" style="font-size: 13px; padding: 8px 18px; display: inline-flex; align-items: center; gap: 6px;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                + New Announcement
+              </button>
+            </div>
+          </td></tr>`
         : announcements.map(ann => `
         <tr>
           <td><strong>${ann.title}</strong></td>
@@ -3115,6 +3233,21 @@
           </td>
         </tr>
       `).join('');
+    }
+
+    // MOBILE ADD ACTION TRIGGER
+    function triggerMobileAdd() {
+      const activeTab = document.querySelector('.tab-content.active');
+      const activeId = activeTab ? activeTab.id : 'tab-resources';
+      if (activeId === 'tab-events') {
+        if (typeof openEventModal === 'function') openEventModal();
+      } else if (activeId === 'tab-announcements') {
+        if (typeof openAnnouncementModal === 'function') openAnnouncementModal();
+      } else if (activeId === 'tab-settings') {
+        if (typeof openNewAdminModal === 'function') openNewAdminModal();
+      } else {
+        openResourceModal();
+      }
     }
 
     // CRUD ACTIONS
