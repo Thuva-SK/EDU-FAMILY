@@ -3628,16 +3628,65 @@
       }
     }
 
+    function adminDataURLtoBlob(dataurl) {
+      try {
+        const arr = dataurl.split(',');
+        const mimeMatch = arr[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: mime });
+      } catch (e) {
+        console.error('DataURLtoBlob error:', e);
+        return null;
+      }
+    }
+
+    function triggerAdminBlobDownload(fileLink, fileName) {
+      try {
+        if (fileLink.startsWith('data:')) {
+          const blob = adminDataURLtoBlob(fileLink);
+          if (blob) {
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+              a.remove();
+              URL.revokeObjectURL(blobUrl);
+            }, 1000);
+            return;
+          }
+        }
+
+        const a = document.createElement('a');
+        a.href = fileLink;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.download = fileName;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => a.remove(), 1000);
+      } catch (err) {
+        console.error('Download error:', err);
+        window.open(fileLink, '_blank');
+      }
+    }
+
     function downloadAdminResource(id) {
       const item = resources.find(r => r.id == id);
       if (!item) {
         showToast('Resource not found.');
         return;
       }
-
-      item.downloads = (Number(item.downloads) || 0) + 1;
-      saveStorage();
-      renderTables();
 
       const fileLink = item.link ? item.link.trim() : '';
       const fileName = item.fileName || (item.title ? `${item.title.replace(/[^a-zA-Z0-9_\-]/g, '_')}.pdf` : 'download.pdf');
@@ -3647,16 +3696,11 @@
         return;
       }
 
-      const a = document.createElement('a');
-      a.href = fileLink;
-      a.download = fileName;
-      if (!fileLink.startsWith('data:')) {
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-      }
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => a.remove(), 100);
+      item.downloads = (Number(item.downloads) || 0) + 1;
+      saveStorage();
+      renderTables();
+
+      triggerAdminBlobDownload(fileLink, fileName);
       showToast(`Downloading ${fileName}...`);
     }
 
