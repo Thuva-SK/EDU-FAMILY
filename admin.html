@@ -2986,7 +2986,7 @@
             category: item.category,
             status: item.status,
             file_name: item.fileName || null,
-            link: (item.link && item.link.length > 200000) ? '#uploaded_file' : (item.link || '#'),
+            link: item.link || '#',
             downloads: item.downloads || 0,
             date: item.date || new Date().toISOString().split('T')[0]
           };
@@ -3639,11 +3639,11 @@
       saveStorage();
       renderTables();
 
-      const fileLink = item.link;
+      const fileLink = item.link ? item.link.trim() : '';
       const fileName = item.fileName || (item.title ? `${item.title.replace(/[^a-zA-Z0-9_\-]/g, '_')}.pdf` : 'download.pdf');
 
-      if (!fileLink || fileLink === '#' || fileLink === '#uploaded_file') {
-        showToast(`No file link available for "${item.title}"`);
+      if (!fileLink || fileLink === '#' || fileLink.startsWith('#')) {
+        showToast(`No download link attached for "${item.title}"`);
         return;
       }
 
@@ -3652,6 +3652,7 @@
       a.download = fileName;
       if (!fileLink.startsWith('data:')) {
         a.target = '_blank';
+        a.rel = 'noopener noreferrer';
       }
       document.body.appendChild(a);
       a.click();
