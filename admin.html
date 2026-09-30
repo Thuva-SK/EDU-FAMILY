@@ -2991,7 +2991,21 @@
             date: item.date || new Date().toISOString().split('T')[0]
           };
           const { error } = await supabaseClient.from('resources').upsert(payload);
-          if (error) console.warn('Supabase saveResource warning:', error);
+          if (error) {
+            if (error.code === 'PGRST204') {
+              const safePayload = {
+                id: item.id,
+                title: item.title,
+                category: item.category,
+                status: item.status,
+                file_name: item.fileName || null,
+                downloads: item.downloads || 0
+              };
+              await supabaseClient.from('resources').upsert(safePayload);
+            } else {
+              console.warn('Supabase saveResource warning:', error);
+            }
+          }
         } catch(e) { console.warn('Supabase saveResource err:', e); }
       },
 
@@ -3012,7 +3026,16 @@
             status: item.status || 'Upcoming',
             registered_count: item.registered_count || 0
           };
-          await supabaseClient.from('events').upsert(payload);
+          const { error } = await supabaseClient.from('events').upsert(payload);
+          if (error && error.code === 'PGRST204') {
+            const safePayload = {
+              id: item.id,
+              title: item.title,
+              location: item.location,
+              status: item.status || 'Upcoming'
+            };
+            await supabaseClient.from('events').upsert(safePayload);
+          }
         } catch(e) { console.warn('Supabase saveEvent err:', e); }
       },
 
@@ -3032,7 +3055,16 @@
             date: item.date || new Date().toISOString().split('T')[0],
             is_active: item.is_active !== false
           };
-          await supabaseClient.from('announcements').upsert(payload);
+          const { error } = await supabaseClient.from('announcements').upsert(payload);
+          if (error && error.code === 'PGRST204') {
+            const safePayload = {
+              id: item.id,
+              title: item.title,
+              priority: item.priority,
+              audience: item.audience
+            };
+            await supabaseClient.from('announcements').upsert(safePayload);
+          }
         } catch(e) { console.warn('Supabase saveAnnouncement err:', e); }
       },
 
@@ -3054,7 +3086,17 @@
             status: item.status || 'Unread',
             date: item.date || new Date().toISOString().split('T')[0]
           };
-          await supabaseClient.from('inquiries').upsert(payload);
+          const { error } = await supabaseClient.from('inquiries').upsert(payload);
+          if (error && error.code === 'PGRST204') {
+            const safePayload = {
+              id: item.id,
+              student_name: item.name,
+              email: item.email,
+              message: item.message,
+              status: item.status || 'Unread'
+            };
+            await supabaseClient.from('inquiries').upsert(safePayload);
+          }
         } catch(e) { console.warn('Supabase saveInquiry err:', e); }
       },
 
@@ -3492,7 +3534,7 @@
       const location = document.getElementById('evt-location').value.trim();
 
       const newEvt = {
-        id: Date.now(),
+        id: Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 100),
         title: title,
         date: dateStr,
         location: location,
@@ -3515,7 +3557,7 @@
       const audience = document.getElementById('ann-audience').value.trim();
 
       const newAnn = {
-        id: Date.now(),
+        id: Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 100),
         title: title,
         priority: priority,
         audience: audience,
@@ -3555,7 +3597,7 @@
           }
         } else {
           const newItem = {
-            id: Date.now(),
+            id: Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 100),
             title: title,
             category: category,
             downloads: 0,
@@ -4216,7 +4258,7 @@
       }
 
       users.push({
-        id: Date.now(),
+        id: Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 100),
         name,
         email,
         password_hash: pw,

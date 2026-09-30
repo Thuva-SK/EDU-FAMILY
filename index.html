@@ -3422,7 +3422,7 @@
         const stored = localStorage.getItem('edu_inquiries') || localStorage.getItem('edufamily_inquiries');
         const inquiries = stored ? JSON.parse(stored) : [];
         const newInq = {
-          id: Date.now(),
+          id: Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 100),
           name: name,
           email: email,
           subject: "Website Contact Form",
@@ -3577,7 +3577,17 @@
             status: item.status || 'Unread',
             date: item.date || new Date().toISOString().split('T')[0]
           };
-          await supabaseClient.from('inquiries').upsert(payload);
+          const { error } = await supabaseClient.from('inquiries').upsert(payload);
+          if (error && error.code === 'PGRST204') {
+            const safePayload = {
+              id: item.id,
+              student_name: item.name,
+              email: item.email,
+              message: item.message,
+              status: item.status || 'Unread'
+            };
+            await supabaseClient.from('inquiries').upsert(safePayload);
+          }
         } catch(e) { console.warn('Supabase saveInquiry err:', e); }
       },
 
@@ -3590,11 +3600,22 @@
             category: item.category,
             status: item.status,
             file_name: item.fileName || null,
-            link: item.link || '#',
+            link: (item.link && item.link.length > 200000) ? '#uploaded_file' : (item.link || '#'),
             downloads: item.downloads || 0,
             date: item.date || new Date().toISOString().split('T')[0]
           };
-          await supabaseClient.from('resources').upsert(payload);
+          const { error } = await supabaseClient.from('resources').upsert(payload);
+          if (error && error.code === 'PGRST204') {
+            const safePayload = {
+              id: item.id,
+              title: item.title,
+              category: item.category,
+              status: item.status,
+              file_name: item.fileName || null,
+              downloads: item.downloads || 0
+            };
+            await supabaseClient.from('resources').upsert(safePayload);
+          }
         } catch(e) { console.warn('Supabase saveResource err:', e); }
       }
     };
