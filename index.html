@@ -3631,13 +3631,33 @@
         const cloudData = await EduCloud.fetchAll();
         if (cloudData) {
           if (Array.isArray(cloudData.resData)) {
-            localStorage.setItem('edu_resources', JSON.stringify(cloudData.resData));
+            const localStr = localStorage.getItem('edu_resources');
+            let localArr = localStr ? JSON.parse(localStr) : [];
+            const localMap = new Map(localArr.map(r => [String(r.id), r]));
+            const cloudMerged = cloudData.resData.map(r => {
+              const localItem = localMap.get(String(r.id));
+              if (localItem && localItem.link && localItem.link.startsWith('data:') && (!r.link || r.link === '#' || r.link === '#uploaded_file')) {
+                r.link = localItem.link;
+              }
+              return r;
+            });
+            const cloudIds = new Set(cloudData.resData.map(r => String(r.id)));
+            const localOnly = localArr.filter(r => !cloudIds.has(String(r.id)));
+            localStorage.setItem('edu_resources', JSON.stringify([...cloudMerged, ...localOnly]));
           }
           if (Array.isArray(cloudData.evtData)) {
-            localStorage.setItem('edu_events', JSON.stringify(cloudData.evtData));
+            const localStr = localStorage.getItem('edu_events');
+            let localArr = localStr ? JSON.parse(localStr) : [];
+            const cloudIds = new Set(cloudData.evtData.map(e => String(e.id)));
+            const localOnly = localArr.filter(e => !cloudIds.has(String(e.id)));
+            localStorage.setItem('edu_events', JSON.stringify([...cloudData.evtData, ...localOnly]));
           }
           if (Array.isArray(cloudData.annData)) {
-            localStorage.setItem('edu_announcements', JSON.stringify(cloudData.annData));
+            const localStr = localStorage.getItem('edu_announcements');
+            let localArr = localStr ? JSON.parse(localStr) : [];
+            const cloudIds = new Set(cloudData.annData.map(a => String(a.id)));
+            const localOnly = localArr.filter(a => !cloudIds.has(String(a.id)));
+            localStorage.setItem('edu_announcements', JSON.stringify([...cloudData.annData, ...localOnly]));
           }
           if (cloudData.cfgData) {
             localStorage.setItem('edu_portal_settings', JSON.stringify(cloudData.cfgData));

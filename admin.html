@@ -2986,11 +2986,12 @@
             category: item.category,
             status: item.status,
             file_name: item.fileName || null,
-            link: item.link || '#',
+            link: (item.link && item.link.length > 200000) ? '#uploaded_file' : (item.link || '#'),
             downloads: item.downloads || 0,
             date: item.date || new Date().toISOString().split('T')[0]
           };
-          await supabaseClient.from('resources').upsert(payload);
+          const { error } = await supabaseClient.from('resources').upsert(payload);
+          if (error) console.warn('Supabase saveResource warning:', error);
         } catch(e) { console.warn('Supabase saveResource err:', e); }
       },
 
@@ -3129,21 +3130,41 @@
       const cloudData = await EduCloud.fetchAll();
       if (cloudData) {
         if (Array.isArray(cloudData.resData)) {
-          resources = cloudData.resData;
+          const localMap = new Map(resources.map(r => [String(r.id), r]));
+          const cloudMerged = cloudData.resData.map(r => {
+            const localItem = localMap.get(String(r.id));
+            if (localItem && localItem.link && localItem.link.startsWith('data:') && (!r.link || r.link === '#' || r.link === '#uploaded_file')) {
+              r.link = localItem.link;
+            }
+            return r;
+          });
+          const cloudIds = new Set(cloudData.resData.map(r => String(r.id)));
+          const localOnly = Array.from(localMap.values()).filter(r => !cloudIds.has(String(r.id)));
+          resources = [...cloudMerged, ...localOnly];
           localStorage.setItem('edu_resources', JSON.stringify(resources));
+          localOnly.forEach(item => EduCloud.saveResource(item));
         }
         if (Array.isArray(cloudData.evtData)) {
-          events = cloudData.evtData;
+          const cloudIds = new Set(cloudData.evtData.map(e => String(e.id)));
+          const localOnly = events.filter(e => !cloudIds.has(String(e.id)));
+          events = [...cloudData.evtData, ...localOnly];
           localStorage.setItem('edu_events', JSON.stringify(events));
+          localOnly.forEach(item => EduCloud.saveEvent(item));
         }
         if (Array.isArray(cloudData.annData)) {
-          announcements = cloudData.annData;
+          const cloudIds = new Set(cloudData.annData.map(a => String(a.id)));
+          const localOnly = announcements.filter(a => !cloudIds.has(String(a.id)));
+          announcements = [...cloudData.annData, ...localOnly];
           localStorage.setItem('edu_announcements', JSON.stringify(announcements));
+          localOnly.forEach(item => EduCloud.saveAnnouncement(item));
         }
         if (Array.isArray(cloudData.inqData)) {
-          inquiries = cloudData.inqData;
+          const cloudIds = new Set(cloudData.inqData.map(i => String(i.id)));
+          const localOnly = inquiries.filter(i => !cloudIds.has(String(i.id)));
+          inquiries = [...cloudData.inqData, ...localOnly];
           localStorage.setItem('edu_inquiries', JSON.stringify(inquiries));
           localStorage.setItem('edufamily_inquiries', JSON.stringify(inquiries));
+          localOnly.forEach(item => EduCloud.saveInquiry(item));
         }
         if (cloudData.cfgData) {
           localStorage.setItem('edu_portal_settings', JSON.stringify(cloudData.cfgData));
