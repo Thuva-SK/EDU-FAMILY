@@ -3803,13 +3803,53 @@
               <h4 style="font-size: 16px; font-weight: 700; margin-bottom: 8px; line-height: 1.4;">${r.title}</h4>
               ${r.fileName ? `<small style="color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 4px; margin-bottom: 14px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg> ${r.fileName}</small>` : ''}
             </div>
-            <button onclick="downloadResource(${r.id})" class="btn primary" style="width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <button type="button" onclick="downloadResource(${r.id})" class="btn primary" style="width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               பதிவிறக்குக (Download)
             </button>
           </div>
         `;
       }).join('');
+    }
+
+    function downloadResource(id) {
+      const { res } = getIndexData();
+      const item = res.find(r => r.id == id);
+      if (!item) {
+        if (typeof customAlert === 'function') {
+          customAlert({ title: 'பிழை (Error)', message: 'வளம் கிடைக்கவில்லை (Resource not found).', iconType: 'danger' });
+        }
+        return;
+      }
+
+      item.downloads = (Number(item.downloads) || 0) + 1;
+      localStorage.setItem('edu_resources', JSON.stringify(res));
+      if (typeof EduCloud !== 'undefined') {
+        EduCloud.saveResource(item);
+      }
+      filterResources();
+
+      const fileLink = item.link;
+      const fileName = item.fileName || (item.title ? `${item.title.replace(/[^a-zA-Z0-9_\-]/g, '_')}.pdf` : 'download.pdf');
+
+      if (!fileLink || fileLink === '#' || fileLink === '#uploaded_file') {
+        customAlert({
+          title: 'கோப்பு கிடைக்கவில்லை (File Not Available)',
+          message: `"${item.title}" கோப்புக்கான பதிவிறக்க இணைப்பு சேர்க்கப்படவில்லை.`,
+          iconType: 'danger'
+        });
+        return;
+      }
+
+      const a = document.createElement('a');
+      a.href = fileLink;
+      a.download = fileName;
+      if (!fileLink.startsWith('data:')) {
+        a.target = '_blank';
+      }
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 100);
     }
 
     function renderIndexAnnouncements(annList) {
