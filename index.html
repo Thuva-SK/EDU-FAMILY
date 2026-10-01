@@ -3679,8 +3679,12 @@
       localStorage.setItem('edu_data_cleaned_v2', 'true');
     }
 
-    if (localStorage.getItem('edu_data_cleaned_v2') !== 'true') {
+    if (localStorage.getItem('edu_data_cleaned_v3') !== 'true') {
       cleanLegacyDefaults();
+      localStorage.removeItem('edu_resources');
+      localStorage.removeItem('edu_events');
+      localStorage.removeItem('edu_announcements');
+      localStorage.setItem('edu_data_cleaned_v3', 'true');
     }
 
     async function syncIndexCloudData() {
@@ -3698,23 +3702,13 @@
               }
               return r;
             });
-            const cloudIds = new Set(cloudData.resData.map(r => String(r.id)));
-            const localOnly = localArr.filter(r => !cloudIds.has(String(r.id)));
-            localStorage.setItem('edu_resources', JSON.stringify([...cloudMerged, ...localOnly]));
+            localStorage.setItem('edu_resources', JSON.stringify(cloudMerged));
           }
           if (Array.isArray(cloudData.evtData)) {
-            const localStr = localStorage.getItem('edu_events');
-            let localArr = localStr ? JSON.parse(localStr) : [];
-            const cloudIds = new Set(cloudData.evtData.map(e => String(e.id)));
-            const localOnly = localArr.filter(e => !cloudIds.has(String(e.id)));
-            localStorage.setItem('edu_events', JSON.stringify([...cloudData.evtData, ...localOnly]));
+            localStorage.setItem('edu_events', JSON.stringify(cloudData.evtData));
           }
           if (Array.isArray(cloudData.annData)) {
-            const localStr = localStorage.getItem('edu_announcements');
-            let localArr = localStr ? JSON.parse(localStr) : [];
-            const cloudIds = new Set(cloudData.annData.map(a => String(a.id)));
-            const localOnly = localArr.filter(a => !cloudIds.has(String(a.id)));
-            localStorage.setItem('edu_announcements', JSON.stringify([...cloudData.annData, ...localOnly]));
+            localStorage.setItem('edu_announcements', JSON.stringify(cloudData.annData));
           }
           if (cloudData.cfgData) {
             localStorage.setItem('edu_portal_settings', JSON.stringify(cloudData.cfgData));

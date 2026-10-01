@@ -3470,8 +3470,12 @@
       localStorage.setItem('edu_data_cleaned_v2', 'true');
     }
 
-    if (localStorage.getItem('edu_data_cleaned_v2') !== 'true') {
+    if (localStorage.getItem('edu_data_cleaned_v3') !== 'true') {
       cleanAdminLegacyDefaults();
+      localStorage.removeItem('edu_resources');
+      localStorage.removeItem('edu_events');
+      localStorage.removeItem('edu_announcements');
+      localStorage.setItem('edu_data_cleaned_v3', 'true');
     }
 
     // Load or set storage
@@ -3509,33 +3513,21 @@
             }
             return r;
           });
-          const cloudIds = new Set(cloudData.resData.map(r => String(r.id)));
-          const localOnly = Array.from(localMap.values()).filter(r => !cloudIds.has(String(r.id)));
-          resources = [...cloudMerged, ...localOnly];
+          resources = cloudMerged;
           localStorage.setItem('edu_resources', JSON.stringify(resources));
-          localOnly.forEach(item => EduCloud.saveResource(item));
         }
         if (Array.isArray(cloudData.evtData)) {
-          const cloudIds = new Set(cloudData.evtData.map(e => String(e.id)));
-          const localOnly = events.filter(e => !cloudIds.has(String(e.id)));
-          events = [...cloudData.evtData, ...localOnly];
+          events = cloudData.evtData;
           localStorage.setItem('edu_events', JSON.stringify(events));
-          localOnly.forEach(item => EduCloud.saveEvent(item));
         }
         if (Array.isArray(cloudData.annData)) {
-          const cloudIds = new Set(cloudData.annData.map(a => String(a.id)));
-          const localOnly = announcements.filter(a => !cloudIds.has(String(a.id)));
-          announcements = [...cloudData.annData, ...localOnly];
+          announcements = cloudData.annData;
           localStorage.setItem('edu_announcements', JSON.stringify(announcements));
-          localOnly.forEach(item => EduCloud.saveAnnouncement(item));
         }
         if (Array.isArray(cloudData.inqData)) {
-          const cloudIds = new Set(cloudData.inqData.map(i => String(i.id)));
-          const localOnly = inquiries.filter(i => !cloudIds.has(String(i.id)));
-          inquiries = [...cloudData.inqData, ...localOnly];
+          inquiries = cloudData.inqData;
           localStorage.setItem('edu_inquiries', JSON.stringify(inquiries));
           localStorage.setItem('edufamily_inquiries', JSON.stringify(inquiries));
-          localOnly.forEach(item => EduCloud.saveInquiry(item));
         }
         if (cloudData.cfgData) {
           localStorage.setItem('edu_portal_settings', JSON.stringify(cloudData.cfgData));
@@ -4135,9 +4127,12 @@
       });
       if (confirmed) {
         resources = resources.filter(r => r.id !== id);
-        EduCloud.deleteResource(id);
+        await EduCloud.deleteResource(id);
         saveStorage();
         renderTables();
+        if (typeof EduRealtime !== 'undefined') {
+          EduRealtime.notify('DATA_SYNC', { type: 'deleteResource', id: id });
+        }
       }
     }
 
@@ -4151,9 +4146,12 @@
       });
       if (confirmed) {
         events = events.filter(e => e.id !== id);
-        EduCloud.deleteEvent(id);
+        await EduCloud.deleteEvent(id);
         saveStorage();
         renderTables();
+        if (typeof EduRealtime !== 'undefined') {
+          EduRealtime.notify('DATA_SYNC', { type: 'deleteEvent', id: id });
+        }
       }
     }
 
@@ -4167,9 +4165,12 @@
       });
       if (confirmed) {
         announcements = announcements.filter(a => a.id !== id);
-        EduCloud.deleteAnnouncement(id);
+        await EduCloud.deleteAnnouncement(id);
         saveStorage();
         renderTables();
+        if (typeof EduRealtime !== 'undefined') {
+          EduRealtime.notify('DATA_SYNC', { type: 'deleteAnnouncement', id: id });
+        }
       }
     }
 
@@ -4183,9 +4184,12 @@
       });
       if (confirmed) {
         inquiries = inquiries.filter(i => i.id !== id);
-        EduCloud.deleteInquiry(id);
+        await EduCloud.deleteInquiry(id);
         saveStorage();
         renderTables();
+        if (typeof EduRealtime !== 'undefined') {
+          EduRealtime.notify('DATA_SYNC', { type: 'deleteInquiry', id: id });
+        }
       }
     }
 
