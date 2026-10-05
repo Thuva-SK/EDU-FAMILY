@@ -57,8 +57,19 @@ export default function Footer() {
         </div>
 
         {/* Footer Bottom */}
-        <div className="footer-bottom">
+        <div className="footer-bottom" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           <p>© {new Date().getFullYear()} Edufamily in Tamil. All Rights Reserved.</p>
+          <Link 
+            to="/admin" 
+            style={{ 
+              fontSize: '0.8rem', 
+              color: 'inherit', 
+              opacity: 0.6, 
+              textDecoration: 'none'
+            }}
+          >
+            நிர்வாகி (Admin)
+          </Link>
         </div>
       </div>
     </footer>
