@@ -21,7 +21,15 @@ import {
   FileText,
   X,
   Image as ImageIcon,
-  Info
+  Info,
+  AlignLeft,
+  Copy,
+  Check,
+  Printer,
+  UserPlus,
+  Users,
+  Crown,
+  Shield
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -50,6 +58,9 @@ export default function AdminPage() {
   // Modal forms
   const [showResModal, setShowResModal] = useState(false);
   const [newRes, setNewRes] = useState({ title: '', category: 'Notes', link: '', description: '', file_size: '', file_name: '' });
+  const [resFormat, setResFormat] = useState('pdf'); // 'pdf' or 'text'
+  const [textContent, setTextContent] = useState('');
+  const [showTextPreview, setShowTextPreview] = useState(false);
   const [pdfFile, setPdfFile] = useState(null);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
 
@@ -61,6 +72,16 @@ export default function AdminPage() {
 
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [newAnn, setNewAnn] = useState({ title: '', priority: 'General', audience: 'All Students', description: '' });
+
+  // Admin Management states (adminbabi@gmail.com super admin feature)
+  const [admins, setAdmins] = useState([]);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({ name: '', email: '', password: '', role: 'Admin' });
+  const [isSubmittingAdmin, setIsSubmittingAdmin] = useState(false);
+  const [showAdminPasswordInTable, setShowAdminPasswordInTable] = useState({});
+
+  const currentAdminEmail = (sessionStorage.getItem('edufamily_admin_email') || 'adminbabi@gmail.com').toLowerCase().trim();
+  const isSuperAdmin = currentAdminEmail === 'adminbabi@gmail.com';
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -99,11 +120,19 @@ export default function AdminPage() {
       })
       .subscribe();
 
+    const usersChannel = supabase
+      .channel('admin-realtime-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+        loadAllAdminData();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(resChannel);
       supabase.removeChannel(evtChannel);
       supabase.removeChannel(annChannel);
       supabase.removeChannel(inqChannel);
+      supabase.removeChannel(usersChannel);
     };
   }, [isAuthenticated]);
 
@@ -138,6 +167,45 @@ export default function AdminPage() {
 
       const { data: inqData } = await supabase.from('inquiries').select('*').order('submitted_at', { ascending: false });
       setInquiries(inqData || []);
+
+      // Fetch users / admins
+      const superAdminDefault = {
+        id: 1,
+        name: 'Babi',
+        email: 'adminbabi@gmail.com',
+        password_hash: 'edufamilyadmin-babi',
+        role: 'Super Admin',
+        status: 'Active',
+        avatar: 'BA',
+        created_at: '2024-01-01'
+      };
+
+      let loadedAdmins = [];
+      try {
+        const { data: usersData, error: usersErr } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+        if (usersData && usersData.length > 0 && !usersErr) {
+          const hasSuper = usersData.some(u => u.email?.toLowerCase() === 'adminbabi@gmail.com');
+          loadedAdmins = hasSuper ? usersData : [superAdminDefault, ...usersData];
+        } else {
+          loadedAdmins = [superAdminDefault];
+        }
+      } catch (err) {
+        loadedAdmins = [superAdminDefault];
+      }
+
+      // Merge with any local cache admins if available
+      try {
+        const localAdmins = JSON.parse(localStorage.getItem('edufamily_local_admins') || '[]');
+        localAdmins.forEach(la => {
+          if (!loadedAdmins.some(a => a.email?.toLowerCase() === la.email?.toLowerCase())) {
+            loadedAdmins.push(la);
+          }
+        });
+      } catch (e) {
+        // ignore
+      }
+
+      setAdmins(loadedAdmins);
     } catch (e) {
       setResources([]);
       setEvents([]);
@@ -153,7 +221,7 @@ export default function AdminPage() {
     const email = adminEmail.trim().toLowerCase();
     const pass = adminPassword.trim();
 
-    // Check target credentials
+    // 1. Super Admin credentials check (adminbabi@gmail.com)
     if (
       (email === 'adminbabi@gmail.com' && pass === 'edufamilyadmin-babi') ||
       (email === 'admin' && (pass === 'edufamilyadmin-babi' || pass === '1234' || pass === 'admin')) ||
@@ -161,13 +229,15 @@ export default function AdminPage() {
     ) {
       setIsAuthenticated(true);
       sessionStorage.setItem('edufamily_admin_auth', 'true');
-      sessionStorage.setItem('edufamily_admin_email', email || 'adminbabi@gmail.com');
-      addToast('நிர்வாகி அணுகல் அனுமதிக்கப்பட்டது! (Admin Login Successful)', 'success');
+      sessionStorage.setItem('edufamily_admin_email', 'adminbabi@gmail.com');
+      sessionStorage.setItem('edufamily_admin_name', 'Babi (Super Admin)');
+      sessionStorage.setItem('edufamily_admin_role', 'Super Admin');
+      addToast('முதன்மை சூப்பர் அட்மின் அணுகல் அனுமதிக்கப்பட்டது! (Super Admin Login Successful)', 'success');
       setIsSubmitting(false);
       return;
     }
 
-    // Check supabase users table if configured
+    // 2. Database users check
     try {
       const { data, error } = await supabase
         .from('users')
@@ -177,15 +247,45 @@ export default function AdminPage() {
         .maybeSingle();
 
       if (data && !error) {
+        if (data.status === 'Inactive') {
+          addToast('உங்கள் நிர்வாகக் கணக்கு முடக்கப்பட்டுள்ளது (Account is inactive)', 'error');
+          setIsSubmitting(false);
+          return;
+        }
         setIsAuthenticated(true);
         sessionStorage.setItem('edufamily_admin_auth', 'true');
         sessionStorage.setItem('edufamily_admin_email', data.email);
-        addToast('நிர்வாகி அணுகல் அனுமதிக்கப்பட்டது! (Admin Login Successful)', 'success');
+        sessionStorage.setItem('edufamily_admin_name', data.name);
+        sessionStorage.setItem('edufamily_admin_role', data.role || 'Admin');
+        addToast(`வரவேற்கிறோம் ${data.name}! (Admin Login Successful)`, 'success');
         setIsSubmitting(false);
         return;
       }
     } catch (err) {
-      // fallback
+      console.warn(err);
+    }
+
+    // 3. Local cache fallback check (if saved locally)
+    try {
+      const localAdmins = JSON.parse(localStorage.getItem('edufamily_local_admins') || '[]');
+      const matched = localAdmins.find(a => a.email.toLowerCase() === email && a.password_hash === pass);
+      if (matched) {
+        if (matched.status === 'Inactive') {
+          addToast('உங்கள் நிர்வாகக் கணக்கு முடக்கப்பட்டுள்ளது (Account is inactive)', 'error');
+          setIsSubmitting(false);
+          return;
+        }
+        setIsAuthenticated(true);
+        sessionStorage.setItem('edufamily_admin_auth', 'true');
+        sessionStorage.setItem('edufamily_admin_email', matched.email);
+        sessionStorage.setItem('edufamily_admin_name', matched.name);
+        sessionStorage.setItem('edufamily_admin_role', matched.role || 'Admin');
+        addToast(`வரவேற்கிறோம் ${matched.name}! (Admin Login Successful)`, 'success');
+        setIsSubmitting(false);
+        return;
+      }
+    } catch (e) {
+      // ignore
     }
 
     addToast('தவறான மின்னஞ்சல் அல்லது கடவுச்சொல்! (Invalid Email or Password)', 'error');
@@ -196,8 +296,120 @@ export default function AdminPage() {
     setIsAuthenticated(false);
     sessionStorage.removeItem('edufamily_admin_auth');
     sessionStorage.removeItem('edufamily_admin_email');
+    sessionStorage.removeItem('edufamily_admin_name');
+    sessionStorage.removeItem('edufamily_admin_role');
     setAdminPassword('');
+    setActiveTab('resources');
     addToast('வெளியேற்றப்பட்டது (Logged Out)', 'info');
+  };
+
+  // Add new admin (Super Admin only: adminbabi@gmail.com)
+  const handleAddAdmin = async (e) => {
+    e.preventDefault();
+    if (!newAdmin.name.trim()) {
+      addToast('தயவுசெய்து நிர்வாகியின் பெயரை உள்ளிடவும் (Name is required)', 'error');
+      return;
+    }
+    if (!newAdmin.email.trim() || !newAdmin.email.includes('@')) {
+      addToast('தயவுசெய்து சரியான மின்னஞ்சலை உள்ளிடவும் (Valid email is required)', 'error');
+      return;
+    }
+    if (!newAdmin.password.trim() || newAdmin.password.length < 4) {
+      addToast('கடவுச்சொல் குறைந்தது 4 எழுத்துக்களைக் கொண்டிருக்க வேண்டும் (Password min 4 chars)', 'error');
+      return;
+    }
+
+    const emailLower = newAdmin.email.trim().toLowerCase();
+
+    // Check if email already exists
+    if (admins.some(a => a.email.toLowerCase() === emailLower)) {
+      addToast('இந்த மின்னஞ்சல் முகவரியில் ஏற்கனவே ஒரு நிர்வாகி உள்ளார்! (Email already exists)', 'error');
+      return;
+    }
+
+    setIsSubmittingAdmin(true);
+
+    const newAdminRecord = {
+      id: Date.now(),
+      name: newAdmin.name.trim(),
+      email: emailLower,
+      password_hash: newAdmin.password.trim(),
+      role: newAdmin.role || 'Admin',
+      avatar: (newAdmin.name.trim().slice(0, 2) || 'AD').toUpperCase(),
+      status: 'Active',
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      const { data, error } = await supabase.from('users').insert([newAdminRecord]).select();
+      if (error) {
+        console.warn('Supabase users insert error:', error.message);
+      }
+
+      const created = (data && data[0]) ? data[0] : newAdminRecord;
+      setAdmins(prev => [created, ...prev]);
+
+      // Cache locally so login works seamlessly
+      const localAdmins = JSON.parse(localStorage.getItem('edufamily_local_admins') || '[]');
+      localStorage.setItem('edufamily_local_admins', JSON.stringify([newAdminRecord, ...localAdmins.filter(a => a.email !== emailLower)]));
+
+      setShowAdminModal(false);
+      setNewAdmin({ name: '', email: '', password: '', role: 'Admin' });
+      setIsSubmittingAdmin(false);
+      addToast(`புதிய நிர்வாகி (${created.name}) வெற்றிகரமாக சேர்க்கப்பட்டார்!`, 'success');
+    } catch (err) {
+      console.error(err);
+      setIsSubmittingAdmin(false);
+      addToast('நிர்வாகியைச் சேர்ப்பதில் பிழை ஏற்பட்டது.', 'error');
+    }
+  };
+
+  // Delete an admin (Super Admin only)
+  const handleDeleteAdmin = async (id, email) => {
+    if (email.toLowerCase() === 'adminbabi@gmail.com') {
+      addToast('முதன்மை சூப்பர் அட்மினை நீக்க முடியாது! (Super Admin cannot be deleted)', 'error');
+      return;
+    }
+
+    if (!window.confirm(`இந்த நிர்வாகியை (${email}) நிச்சயமாக நீக்க வேண்டுமா?`)) return;
+
+    try {
+      await supabase.from('users').delete().eq('id', id);
+    } catch (err) {
+      console.warn('Delete user db error:', err);
+    }
+
+    setAdmins(prev => prev.filter(a => a.id !== id && a.email.toLowerCase() !== email.toLowerCase()));
+
+    // Also update local cache
+    const localAdmins = JSON.parse(localStorage.getItem('edufamily_local_admins') || '[]');
+    localStorage.setItem('edufamily_local_admins', JSON.stringify(localAdmins.filter(a => a.email.toLowerCase() !== email.toLowerCase())));
+
+    addToast('நிர்வாகிக் கணக்கு நீக்கப்பட்டது!', 'info');
+  };
+
+  // Toggle active/inactive status of an admin
+  const handleToggleAdminStatus = async (adminItem) => {
+    if (adminItem.email.toLowerCase() === 'adminbabi@gmail.com') {
+      addToast('முதன்மை சூப்பர் அட்மினை முடக்க முடியாது!', 'error');
+      return;
+    }
+
+    const newStatus = adminItem.status === 'Active' ? 'Inactive' : 'Active';
+
+    try {
+      await supabase.from('users').update({ status: newStatus }).eq('id', adminItem.id);
+    } catch (err) {
+      console.warn(err);
+    }
+
+    setAdmins(prev => prev.map(a => a.id === adminItem.id ? { ...a, status: newStatus } : a));
+
+    // Update local cache
+    const localAdmins = JSON.parse(localStorage.getItem('edufamily_local_admins') || '[]');
+    localStorage.setItem('edufamily_local_admins', JSON.stringify(localAdmins.map(a => a.id === adminItem.id ? { ...a, status: newStatus } : a)));
+
+    addToast(`நிர்வாகி நிலை மாற்றப்பட்டது: ${newStatus === 'Active' ? 'செயலில் உள்ளது (Active)' : 'முடக்கப்பட்டது (Inactive)'}`, 'info');
   };
 
   // Handle PDF file selection
@@ -233,7 +445,7 @@ export default function AdminPage() {
   };
 
 
-  // Add Resource with PDF Upload
+  // Add Resource with PDF or Text format
   const handleAddResource = async (e) => {
     e.preventDefault();
     if (!newRes.title.trim()) {
@@ -241,13 +453,47 @@ export default function AdminPage() {
       return;
     }
 
+    const isTextFormat = newRes.category === 'GK' && resFormat === 'text';
+
+    if (isTextFormat && !textContent.trim()) {
+      addToast('தயவுசெய்து பொது அறிவு உரை உள்ளடக்கத்தை உள்ளிடவும் (Please enter GK text content)', 'error');
+      return;
+    }
+
     setIsUploadingPdf(true);
     let finalFileUrl = newRes.link?.trim() || '';
-    let finalFileName = newRes.file_name || 'Document.pdf';
-    let finalFileSize = newRes.file_size || '1.0 MB';
+    let finalFileName = newRes.file_name || (isTextFormat ? 'GK_Content.txt' : 'Document.pdf');
+    let finalFileSize = newRes.file_size || (isTextFormat ? 'Text' : '1.0 MB');
     let storageFilePath = null;
 
-    if (pdfFile) {
+    if (isTextFormat) {
+      const words = textContent.trim().split(/\s+/).filter(Boolean).length;
+      finalFileSize = `${words} சொற்கள் (Text)`;
+      const cleanSlug = newRes.title.trim().replace(/[^a-zA-Z0-9\u0B80-\u0BFF]/g, '_').slice(0, 35) || 'GK_Content';
+      finalFileName = `${cleanSlug}.txt`;
+      storageFilePath = 'text';
+
+      // Create downloadable text data URI
+      finalFileUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(textContent.trim())}`;
+
+      try {
+        const textBlob = new Blob([textContent.trim()], { type: 'text/plain;charset=utf-8' });
+        const uniqueFilePath = `gk_text_${Date.now()}_${cleanSlug}.txt`;
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('resources')
+          .upload(uniqueFilePath, textBlob, { cacheControl: '3600', upsert: true });
+
+        if (!uploadErr && uploadData) {
+          const { data: publicUrlData } = supabase.storage.from('resources').getPublicUrl(uniqueFilePath);
+          if (publicUrlData?.publicUrl) {
+            finalFileUrl = publicUrlData.publicUrl;
+            storageFilePath = uniqueFilePath;
+          }
+        }
+      } catch (err) {
+        console.warn('Storage upload fallback for text:', err);
+      }
+    } else if (pdfFile) {
       finalFileName = pdfFile.name;
       const sizeInMB = pdfFile.size / (1024 * 1024);
       finalFileSize = sizeInMB >= 1 ? `${sizeInMB.toFixed(1)} MB` : `${Math.round(pdfFile.size / 1024)} KB`;
@@ -295,11 +541,15 @@ export default function AdminPage() {
     }
 
     if (!finalFileUrl) {
-      finalFileUrl = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+      finalFileUrl = isTextFormat ? '' : 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
     }
 
     // Keep file_path safe and under 250 chars so it NEVER violates VARCHAR(500) limit
-    const safeFilePath = (storageFilePath || finalFileName || 'document.pdf').slice(0, 250);
+    const safeFilePath = (storageFilePath || finalFileName || (isTextFormat ? 'text' : 'document.pdf')).slice(0, 250);
+
+    const finalDescription = isTextFormat
+      ? (newRes.description ? `${newRes.description}\n\n${textContent.trim()}` : textContent.trim())
+      : (newRes.description || '');
 
     const payload = {
       title: newRes.title.trim(),
@@ -308,7 +558,7 @@ export default function AdminPage() {
       file_path: safeFilePath,
       file_name: finalFileName,
       file_size: finalFileSize,
-      description: newRes.description || '',
+      description: finalDescription,
       downloads: 0,
       status: 'Published',
       date: new Date().getFullYear().toString()
@@ -328,9 +578,12 @@ export default function AdminPage() {
       }
       setShowResModal(false);
       setPdfFile(null);
+      setTextContent('');
+      setResFormat('pdf');
+      setShowTextPreview(false);
       setNewRes({ title: '', category: 'Notes', link: '', description: '', file_size: '', file_name: '' });
       setIsUploadingPdf(false);
-      addToast('புதிய கல்வி வளம் வெற்றிகரமாக சேர்க்கப்பட்டது!', 'success');
+      addToast(isTextFormat ? 'பொது அறிவு உரை வளம் வெற்றிகரமாக சேர்க்கப்பட்டது!' : 'புதிய கல்வி வளம் வெற்றிகரமாக சேர்க்கப்பட்டது!', 'success');
     } catch (err) {
       console.error(err);
       addToast('சேமிப்பில் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.', 'error');
@@ -784,11 +1037,18 @@ export default function AdminPage() {
         <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 32px', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>OFFICIAL ADMIN DASHBOARD</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '3px 10px', borderRadius: '12px', background: '#dcfce7', color: '#166534', fontWeight: 600 }}>
-                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e' }}></span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {isSuperAdmin ? 'OFFICIAL SUPER ADMIN DASHBOARD' : 'OFFICIAL ADMIN DASHBOARD'}
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '3px 10px', borderRadius: '12px', background: isSuperAdmin ? '#fef3c7' : '#dcfce7', color: isSuperAdmin ? '#92400e' : '#166534', fontWeight: 700 }}>
+                {isSuperAdmin ? <Crown size={12} color="#b45309" /> : <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e' }}></span>}
                 {sessionStorage.getItem('edufamily_admin_email') || 'adminbabi@gmail.com'}
               </span>
+              {isSuperAdmin && (
+                <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(215, 25, 32, 0.1)', color: 'var(--primary)', fontWeight: 800 }}>
+                  👑 முதன்மை நிர்வாகி (Super Admin)
+                </span>
+              )}
             </div>
             <h1 style={{ fontSize: '1.8rem', fontWeight: 800 }}>Edufamily நிர்வாகப் பகுதி</h1>
           </div>
@@ -799,7 +1059,7 @@ export default function AdminPage() {
         </div>
 
         {/* KPI Summary Cards */}
-        <div className="grid-4" style={{ marginBottom: '32px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isSuperAdmin ? 'repeat(auto-fit, minmax(200px, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '32px' }}>
           <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(215,25,32,0.1)', color: '#d71920', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <BookOpen size={24} />
@@ -839,6 +1099,18 @@ export default function AdminPage() {
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>மாணவர் செய்திகள்</div>
             </div>
           </div>
+
+          {isSuperAdmin && (
+            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px', border: '1.5px solid rgba(215, 25, 32, 0.25)', background: 'radial-gradient(circle at 100% 0%, rgba(215, 25, 32, 0.05), transparent 70%)' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(215,25,32,0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Crown size={24} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{admins.length}</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>நிர்வாகிகள் (Admins)</div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tab Navigation */}
@@ -856,6 +1128,24 @@ export default function AdminPage() {
             <button className={`pill-btn ${activeTab === 'inquiries' ? 'active' : ''}`} onClick={() => setActiveTab('inquiries')}>
               Inquiries ({inquiries.length})
             </button>
+            {isSuperAdmin && (
+              <button
+                className={`pill-btn ${activeTab === 'admins' ? 'active' : ''}`}
+                onClick={() => setActiveTab('admins')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderColor: activeTab === 'admins' ? 'var(--primary)' : 'rgba(215, 25, 32, 0.3)',
+                  color: activeTab === 'admins' ? '#fff' : 'var(--primary)',
+                  background: activeTab === 'admins' ? 'var(--primary)' : 'rgba(215, 25, 32, 0.06)',
+                  fontWeight: 700
+                }}
+              >
+                <Crown size={14} />
+                <span>Admins ({admins.length})</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -892,34 +1182,58 @@ export default function AdminPage() {
                       </td>
                     </tr>
                   ) : (
-                    resources.map((r) => (
-                      <tr key={r.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '12px', fontWeight: 600 }}>{r.title}</td>
-                        <td style={{ padding: '12px' }}><span className="category-tag">{r.category}</span></td>
-                        <td style={{ padding: '12px' }}>
-                          {r.link || r.file_path ? (
-                            <a
-                              href={r.link || r.file_path}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--primary)', fontWeight: 600, fontSize: '0.85rem' }}
-                              title={r.file_name || 'View/Download PDF'}
-                            >
-                              <FileText size={15} />
-                              <span>{r.file_size || 'PDF'}</span>
-                            </a>
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px' }}>{r.downloads || 0}</td>
-                        <td style={{ padding: '12px', textAlign: 'right' }}>
-                          <button onClick={() => handleDeleteResource(r.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="நீக்கு">
-                            <Trash2 size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    resources.map((r) => {
+                      const isText = (
+                        r.file_name?.toLowerCase().endsWith('.txt') ||
+                        r.file_size?.toLowerCase().includes('text') ||
+                        r.file_size?.toLowerCase().includes('சொற்கள்') ||
+                        r.file_path === 'text' ||
+                        r.link?.startsWith('data:text')
+                      );
+                      return (
+                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '12px', fontWeight: 600 }}>{r.title}</td>
+                          <td style={{ padding: '12px' }}>
+                            <span className="category-tag">{r.category}</span>
+                            {isText && (
+                              <span style={{ marginLeft: '6px', fontSize: '0.72rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.1)', color: '#059669', fontWeight: 700 }}>
+                                Text
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            {isText ? (
+                              <span
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#059669', fontWeight: 600, fontSize: '0.85rem' }}
+                                title={r.file_name || 'GK Text Content'}
+                              >
+                                <AlignLeft size={15} />
+                                <span>{r.file_size || 'உரை (Text)'}</span>
+                              </span>
+                            ) : r.link || r.file_path ? (
+                              <a
+                                href={r.link || r.file_path}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--primary)', fontWeight: 600, fontSize: '0.85rem' }}
+                                title={r.file_name || 'View/Download PDF'}
+                              >
+                                <FileText size={15} />
+                                <span>{r.file_size || 'PDF'}</span>
+                              </a>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px' }}>{r.downloads || 0}</td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            <button onClick={() => handleDeleteResource(r.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="நீக்கு">
+                              <Trash2 size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1177,17 +1491,170 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        {/* Tab Content: Admins (adminbabi@gmail.com Super Admin Only) */}
+        {activeTab === 'admins' && isSuperAdmin && (
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '14px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Users size={22} color="var(--primary)" />
+                  <span>நிர்வாகிகள் மேலாண்மை (Admins Management)</span>
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  முதன்மை நிர்வாகி (adminbabi@gmail.com) மட்டுமே புதிய நிர்வாகிகளை சேர்க்கவும், அவர்களின் கணக்குகளை நிர்வகிக்கவும் முடியும்.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAdminModal(true)}
+                className="btn btn-primary"
+                style={{ padding: '8px 18px', fontSize: '0.875rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+              >
+                <UserPlus size={16} />
+                <span>புதிய நிர்வாகி சேர் (Add Admin)</span>
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '12px' }}>நிர்வாகி பெயர் (Name)</th>
+                    <th style={{ padding: '12px' }}>மின்னஞ்சல் (Email)</th>
+                    <th style={{ padding: '12px' }}>கடவுச்சொல் (Password)</th>
+                    <th style={{ padding: '12px' }}>பங்கு (Role)</th>
+                    <th style={{ padding: '12px' }}>நிலை (Status)</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>அகற்று (Delete)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {admins.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
+                        நிர்வாகிகள் விவரம் எதுவும் கிடைக்கவில்லை.
+                      </td>
+                    </tr>
+                  ) : (
+                    admins.map((adm) => {
+                      const isMainSuper = adm.email.toLowerCase() === 'adminbabi@gmail.com';
+                      const showPass = showAdminPasswordInTable[adm.id];
+                      return (
+                        <tr key={adm.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '12px', fontWeight: 600 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '50%',
+                                background: isMainSuper ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'var(--primary-light)',
+                                color: isMainSuper ? '#fff' : 'var(--primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 800,
+                                fontSize: '0.8rem',
+                                flexShrink: 0
+                              }}>
+                                {adm.avatar || adm.name?.slice(0, 2).toUpperCase() || 'AD'}
+                              </div>
+                              <div>
+                                <span>{adm.name}</span>
+                                {isMainSuper && (
+                                  <span style={{ marginLeft: '6px', fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.2)', color: '#b45309', fontWeight: 800 }}>
+                                    Primary Super Admin
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px', color: 'var(--text-main)', fontSize: '0.88rem' }}>
+                            {adm.email}
+                          </td>
+                          <td style={{ padding: '12px', fontSize: '0.85rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontFamily: showPass ? 'monospace' : 'inherit', letterSpacing: showPass ? '1px' : '0' }}>
+                                {showPass ? (adm.password_hash || '••••••') : '••••••••'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowAdminPasswordInTable(prev => ({ ...prev, [adm.id]: !prev[adm.id] }))}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}
+                                title={showPass ? 'கடவுச்சொல்லை மறை' : 'கடவுச்சொல்லைக் காட்டு'}
+                              >
+                                {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                              </button>
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <span className="category-tag" style={{ background: isMainSuper ? 'rgba(234, 179, 8, 0.15)' : undefined, color: isMainSuper ? '#b45309' : undefined }}>
+                              {adm.role || (isMainSuper ? 'Super Admin' : 'Admin')}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAdminStatus(adm)}
+                              disabled={isMainSuper}
+                              style={{
+                                border: 'none',
+                                background: adm.status === 'Active' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: adm.status === 'Active' ? '#15803d' : '#b91c1c',
+                                padding: '4px 10px',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: isMainSuper ? 'default' : 'pointer'
+                              }}
+                              title={isMainSuper ? 'முதன்மை சூப்பர் அட்மின் எப்போதும் செயலில் இருக்கும்' : 'நிலையை மாற்ற கிளிக் செய்யவும்'}
+                            >
+                              {adm.status === 'Active' ? 'செயலில் (Active)' : 'முடக்கம் (Inactive)'}
+                            </button>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            {isMainSuper ? (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>பாதுகாக்கப்பட்டது</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAdmin(adm.id, adm.email)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                                title="இந்த நிர்வாகியை நீக்கு"
+                              >
+                                <Trash2 size={17} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Resource Modal */}
       {showResModal && (
         <div className="modal-overlay">
-          <div className="card modal-dialog-card" style={{ maxWidth: '520px' }}>
+          <div className="card modal-dialog-card" style={{ maxWidth: '580px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>புதிய கல்வி வளம் சேர் (Add Resource)</h3>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>புதிய கல்வி வளம் சேர் (Add Resource)</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  பாடக் குறிப்புகள், முந்தைய வினாத்தாள்கள் அல்லது பொது அறிவு (GK) உரை/PDF சேர்க்கவும்
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() => { setShowResModal(false); setPdfFile(null); }}
+                onClick={() => {
+                  setShowResModal(false);
+                  setPdfFile(null);
+                  setTextContent('');
+                  setResFormat('pdf');
+                  setShowTextPreview(false);
+                }}
                 className="icon-btn"
                 style={{ width: '32px', height: '32px' }}
               >
@@ -1196,93 +1663,36 @@ export default function AdminPage() {
             </div>
 
             <form onSubmit={handleAddResource}>
-              {/* PDF Upload Dropzone */}
-              <div className="form-group" style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, fontSize: '0.9rem' }}>
-                  PDF ஆவணம் (Upload PDF Document)
+              {/* Category */}
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                  பிரிவு (Category) *
                 </label>
-
-                {!pdfFile ? (
-                  <label
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      padding: '24px 16px',
-                      border: '2px dashed var(--primary)',
-                      borderRadius: '12px',
-                      background: 'var(--primary-light)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      textAlign: 'center'
-                    }}
-                  >
-                    <UploadCloud size={32} color="var(--primary)" />
-                    <div>
-                      <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.95rem' }}>
-                        PDF கோப்பைத் தேர்ந்தெடுக்க இங்கே கிளிக் செய்யவும்
-                      </span>
-                      <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        (Click to browse or drop PDF file • Max: 20MB)
-                      </p>
-                    </div>
-                    <input
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      style={{ display: 'none' }}
-                      onChange={handleFileChange}
-                    />
-                  </label>
-                ) : (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px 16px',
-                      borderRadius: '12px',
-                      background: '#f0fdf4',
-                      border: '1.5px solid #86efac',
-                      gap: '12px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                      <FileText size={24} color="#16a34a" style={{ flexShrink: 0 }} />
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#15803d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {pdfFile.name}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: '#166534' }}>
-                          {newRes.file_size || 'PDF'} • பதிவேற்ற தயாராக உள்ளது
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPdfFile(null);
-                        setNewRes(prev => ({ ...prev, file_name: '', file_size: '' }));
-                      }}
-                      className="icon-btn"
-                      style={{ width: '28px', height: '28px', color: '#dc2626', background: 'rgba(239,68,68,0.1)' }}
-                      title="கோப்பை அகற்று"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                )}
+                <select
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)', fontWeight: 600 }}
+                  value={newRes.category}
+                  onChange={(e) => {
+                    const cat = e.target.value;
+                    setNewRes(prev => ({ ...prev, category: cat }));
+                    if (cat !== 'GK') {
+                      setResFormat('pdf');
+                    }
+                  }}
+                >
+                  <option value="Past Paper">Past Paper (முந்தைய வினாத்தாள்கள்)</option>
+                  <option value="Notes">Notes (பாடக் குறிப்புகள்)</option>
+                  <option value="GK">GK & Quiz (பொது அறிவு & வினாடி வினா)</option>
+                </select>
               </div>
 
               {/* Title */}
               <div className="form-group" style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
                   வளத்தின் தலைப்பு (Resource Title) *
                 </label>
                 <input
                   type="text"
-                  placeholder="உதாரணம்: G.C.E O/L Science Past Paper 2023"
+                  placeholder={newRes.category === 'GK' ? "உதாரணம்: பொது அறிவு வினா விடைகள் 2024 (General Knowledge Quiz)" : "உதாரணம்: G.C.E O/L Science Past Paper 2023"}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)' }}
                   value={newRes.title}
                   onChange={(e) => setNewRes({ ...newRes, title: e.target.value })}
@@ -1290,21 +1700,275 @@ export default function AdminPage() {
                 />
               </div>
 
-              {/* Category */}
-              <div className="form-group" style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem' }}>
-                  பிரிவு (Category)
-                </label>
-                <select
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)' }}
-                  value={newRes.category}
-                  onChange={(e) => setNewRes({ ...newRes, category: e.target.value })}
-                >
-                  <option value="Past Paper">Past Paper (முந்தைய வினாத்தாள்கள்)</option>
-                  <option value="Notes">Notes (பாடக் குறிப்புகள்)</option>
-                  <option value="GK">GK & Quiz (பொது அறிவு & வினாடி வினா)</option>
-                </select>
-              </div>
+              {/* If Category is GK: choose PDF or Text format */}
+              {newRes.category === 'GK' && (
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)' }}>
+                    பொது அறிவு வடிவம் தேர்ந்தெடுக்கவும் (Resource Type: PDF / Text) *
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setResFormat('pdf')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        border: resFormat === 'pdf' ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                        background: resFormat === 'pdf' ? 'var(--primary-light)' : 'var(--bg-card)',
+                        color: resFormat === 'pdf' ? 'var(--primary)' : 'var(--text-main)',
+                        fontWeight: resFormat === 'pdf' ? 700 : 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <FileText size={18} />
+                      <span>PDF ஆவணம் (PDF)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setResFormat('text')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        border: resFormat === 'text' ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                        background: resFormat === 'text' ? 'var(--primary-light)' : 'var(--bg-card)',
+                        color: resFormat === 'text' ? 'var(--primary)' : 'var(--text-main)',
+                        fontWeight: resFormat === 'text' ? 700 : 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <AlignLeft size={18} />
+                      <span>உரை வடிவம் (Text / Quiz)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Conditional: PDF Upload Dropzone OR Text Content Editor */}
+              {newRes.category === 'GK' && resFormat === 'text' ? (
+                /* Text Input Area */
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                      பொது அறிவு உரை / வினா விடைகள் (GK Text Content / Questions & Answers) *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowTextPreview(!showTextPreview)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary)',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Eye size={14} />
+                      {showTextPreview ? 'உரையைத் திருத்து (Edit)' : 'முன்னோட்டம் (Preview)'}
+                    </button>
+                  </div>
+
+                  {/* Template Shortcuts */}
+                  {!showTextPreview && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const tpl = '\n1. வினா: [இங்கே கேள்வியை உள்ளிடவும்]\nவிடை: [இங்கே சரியான விடை]\n';
+                          setTextContent(prev => prev ? prev + tpl : tpl.trim());
+                        }}
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-light)',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          fontWeight: 500
+                        }}
+                      >
+                        + வினா - விடை (Q&A)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const tpl = '\nவினா: [வினாடி வினா கேள்வி]\nஅ) தெரிவு 1\nஆ) தெரிவு 2\nஇ) தெரிவு 3\nஈ) தெரிவு 4\nசரியான விடை: அ\n';
+                          setTextContent(prev => prev ? prev + tpl : tpl.trim());
+                        }}
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-light)',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          fontWeight: 500
+                        }}
+                      >
+                        + MCQ பல்தேர்வு
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const tpl = '\n• [பொது அறிவு முக்கிய குறிப்பு]\n• [அடுத்த குறிப்பு]\n';
+                          setTextContent(prev => prev ? prev + tpl : tpl.trim());
+                        }}
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-light)',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          fontWeight: 500
+                        }}
+                      >
+                        + புல்லட் புள்ளிகள்
+                      </button>
+                    </div>
+                  )}
+
+                  {showTextPreview ? (
+                    <div style={{
+                      minHeight: '180px',
+                      maxHeight: '260px',
+                      overflowY: 'auto',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-light)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.9rem',
+                      lineHeight: '1.6',
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {textContent.trim() || <span style={{ color: 'var(--text-muted)' }}>உரை எதுவும் உள்ளிடப்படவில்லை...</span>}
+                    </div>
+                  ) : (
+                    <textarea
+                      rows={8}
+                      placeholder="பொது அறிவுத் தகவல்கள், வினாக்கள், விடைகள் அல்லது வினாடி வினா விபரங்களை இங்கே நேரடியாக தட்டச்சு செய்யவும்...&#10;&#10;உதாரணம்:&#10;1. இலங்கையின் மிகப்பெரிய நதி எது?&#10;விடை: மகாவலி கங்கை&#10;&#10;2. உலகிலேயே மிக ஆழமான கடல் பகுதி எது?&#10;விடை: மரியானா அகழி"
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        outline: 'none',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)',
+                        lineHeight: '1.6',
+                        fontSize: '0.9rem',
+                        fontFamily: 'inherit',
+                        resize: 'vertical'
+                      }}
+                      value={textContent}
+                      onChange={(e) => setTextContent(e.target.value)}
+                      required
+                    />
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    <span>{textContent.trim() ? `${textContent.trim().split(/\s+/).filter(Boolean).length} சொற்கள் (Words)` : '0 சொற்கள்'}</span>
+                    <span>{textContent.length} எழுத்துக்கள்</span>
+                  </div>
+                </div>
+              ) : (
+                /* PDF Upload Dropzone */
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, fontSize: '0.9rem' }}>
+                    PDF ஆவணம் (Upload PDF Document)
+                  </label>
+
+                  {!pdfFile ? (
+                    <label
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '24px 16px',
+                        border: '2px dashed var(--primary)',
+                        borderRadius: '12px',
+                        background: 'var(--primary-light)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <UploadCloud size={32} color="var(--primary)" />
+                      <div>
+                        <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.95rem' }}>
+                          PDF கோப்பைத் தேர்ந்தெடுக்க இங்கே கிளிக் செய்யவும்
+                        </span>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          (Click to browse or drop PDF file • Max: 20MB)
+                        </p>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        style={{ display: 'none' }}
+                        onChange={handleFileChange}
+                      />
+                    </label>
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        background: '#f0fdf4',
+                        border: '1.5px solid #86efac',
+                        gap: '12px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                        <FileText size={24} color="#16a34a" style={{ flexShrink: 0 }} />
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#15803d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {pdfFile.name}
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#166534' }}>
+                            {newRes.file_size || 'PDF'} • பதிவேற்ற தயாராக உள்ளது
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPdfFile(null);
+                          setNewRes(prev => ({ ...prev, file_name: '', file_size: '' }));
+                        }}
+                        className="icon-btn"
+                        style={{ width: '28px', height: '28px', color: '#dc2626', background: 'rgba(239,68,68,0.1)' }}
+                        title="கோப்பை அகற்று"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Optional external link */}
               <div className="form-group" style={{ marginBottom: '14px' }}>
@@ -1320,14 +1984,14 @@ export default function AdminPage() {
                 />
               </div>
 
-              {/* Description */}
+              {/* Description (Optional summary) */}
               <div className="form-group" style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem' }}>
-                  விளக்கம் (Description)
+                  {newRes.category === 'GK' && resFormat === 'text' ? 'சுருக்கக் குறிப்பு (Optional Summary Note)' : 'விளக்கம் (Description)'}
                 </label>
                 <textarea
-                  rows={3}
-                  placeholder="மாணவர்களுக்குப் பயன்படக்கூடிய விபரங்கள்..."
+                  rows={2}
+                  placeholder={newRes.category === 'GK' && resFormat === 'text' ? 'இந்த பொது அறிவுத் தொகுப்பைப் பற்றிய சிறு குறிப்பு (விரும்பினால்)...' : 'மாணவர்களுக்குப் பயன்படக்கூடிய விபரங்கள்...'}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)', resize: 'vertical' }}
                   value={newRes.description}
                   onChange={(e) => setNewRes({ ...newRes, description: e.target.value })}
@@ -1337,7 +2001,13 @@ export default function AdminPage() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
                   type="button"
-                  onClick={() => { setShowResModal(false); setPdfFile(null); }}
+                  onClick={() => {
+                    setShowResModal(false);
+                    setPdfFile(null);
+                    setTextContent('');
+                    setResFormat('pdf');
+                    setShowTextPreview(false);
+                  }}
                   className="btn btn-secondary"
                   style={{ flexGrow: 1 }}
                   disabled={isUploadingPdf}
@@ -1631,6 +2301,121 @@ export default function AdminPage() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button type="button" onClick={() => setShowAnnModal(false)} className="btn btn-secondary" style={{ flexGrow: 1 }}>Cancel</button>
                 <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }}>Publish Notice</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Admin Modal (Super Admin adminbabi@gmail.com Only) */}
+      {showAdminModal && isSuperAdmin && (
+        <div className="modal-overlay">
+          <div className="card modal-dialog-card" style={{ maxWidth: '480px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <UserPlus size={20} color="var(--primary)" />
+                  <span>புதிய நிர்வாகி சேர் (Add Admin)</span>
+                </h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Edufamily போர்ட்டலை நிர்வகிக்க புதிய நிர்வாகிக்கு அனுமதி வழங்கவும்
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowAdminModal(false); setNewAdmin({ name: '', email: '', password: '', role: 'Admin' }); }}
+                className="icon-btn"
+                style={{ width: '32px', height: '32px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddAdmin}>
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                  நிர்வாகியின் பெயர் (Full Name) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="உதாரணம்: K. Suresh அல்லது ஆசிரியை வினோதா"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)' }}
+                  value={newAdmin.name}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                  மின்னஞ்சல் முகவரி (Admin Email) *
+                </label>
+                <input
+                  type="email"
+                  placeholder="உதாரணம்: suresh.edufamily@gmail.com"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)' }}
+                  value={newAdmin.email}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, email: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                  உள்நுழைவு கடவுச்சொல் (Login Password) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="குறைந்தது 4 எழுத்துக்கள் உள்ளிடவும்..."
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)', fontFamily: 'monospace' }}
+                  value={newAdmin.password}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, password: e.target.value })}
+                  required
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                  குறிப்பு: புதிய நிர்வாகி இந்த மின்னஞ்சல் மற்றும் கடவுச்சொல்லைப் பயன்படுத்தி உள்நுழைய முடியும்.
+                </span>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                  பங்கு & அதிகாரம் (Role & Permissions)
+                </label>
+                <select
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)', fontWeight: 600 }}
+                  value={newAdmin.role}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, role: e.target.value })}
+                >
+                  <option value="Admin">Admin (முழு நிர்வாக அனுமதி - வளங்கள், நிகழ்வுகள், செய்திகள்)</option>
+                  <option value="Editor">Editor (கல்வி வளங்களை மட்டும் பதிவேற்றுபவர்)</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowAdminModal(false); setNewAdmin({ name: '', email: '', password: '', role: 'Admin' }); }}
+                  className="btn btn-secondary"
+                  style={{ flexGrow: 1 }}
+                  disabled={isSubmittingAdmin}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  disabled={isSubmittingAdmin}
+                >
+                  {isSubmittingAdmin ? (
+                    <span>சேமிக்கிறது...</span>
+                  ) : (
+                    <>
+                      <UserPlus size={16} />
+                      <span>நிர்வாகியைச் சேர் (Save Admin)</span>
+                    </>
+                  )}
+                </button>
               </div>
             </form>
           </div>
