@@ -125,3 +125,29 @@ BEGIN;
   DROP PUBLICATION IF EXISTS supabase_realtime;
   CREATE PUBLICATION supabase_realtime FOR TABLE public.resources, public.events, public.announcements, public.inquiries, public.portal_settings;
 COMMIT;
+
+-- ============================================================
+-- STORAGE BUCKET FOR PDF & IMAGE UPLOADS
+-- ============================================================
+-- 1. Ensure columns are TEXT so they never overflow
+ALTER TABLE IF EXISTS public.resources ALTER COLUMN file_path TYPE TEXT;
+ALTER TABLE IF EXISTS public.resources ALTER COLUMN link TYPE TEXT;
+
+-- 2. Create the 'resources' public storage bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('resources', 'resources', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- 3. Storage Policies to allow public read & upload
+DO $$ BEGIN
+    CREATE POLICY "Public Access Resources Bucket" 
+    ON storage.objects FOR ALL 
+    USING (bucket_id = 'resources') 
+    WITH CHECK (bucket_id = 'resources');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- 4. Ensure announcements and events have all required columns
+ALTER TABLE IF EXISTS public.announcements ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE IF EXISTS public.events ADD COLUMN IF NOT EXISTS cover_image TEXT;
+
+
