@@ -55,6 +55,29 @@ export default function ResourcesPage() {
         if (!isBackground) setResources([]);
       } else {
         setResources(data);
+
+        // Auto-fix legacy misclassified GK text items in database if needed
+        const misclassified = data.filter(r => 
+          r.category === 'GK' && 
+          (r.file_name === 'Document.pdf' || !r.file_name?.toLowerCase().endsWith('.txt')) && 
+          r.description && 
+          (!r.link || r.link.includes('dummy.pdf'))
+        );
+        if (misclassified.length > 0) {
+          misclassified.forEach(async (item) => {
+            try {
+              const words = (item.description || '').trim().split(/\s+/).filter(Boolean).length;
+              const slug = (item.title || 'GK_Content').trim().replace(/[^a-zA-Z0-9\u0B80-\u0BFF]/g, '_').slice(0, 35) || 'GK_Content';
+              await supabase.from('resources').update({
+                file_name: `${slug}.txt`,
+                file_path: 'text',
+                file_size: `${words} சொற்கள் (Text)`
+              }).eq('id', item.id);
+            } catch (e) {
+              // Ignore background update error
+            }
+          });
+        }
       }
     } catch (err) {
       if (!isBackground) setResources([]);
@@ -83,25 +106,63 @@ export default function ResourcesPage() {
   // Helper: detect if resource is text content
   const isTextResource = (res) => {
     if (!res) return false;
-    return (
+    // 1. Explicit text identifiers
+    if (
       res.file_name?.toLowerCase().endsWith('.txt') ||
       res.file_size?.toLowerCase().includes('text') ||
       res.file_size?.toLowerCase().includes('சொற்கள்') ||
       res.file_size?.toLowerCase().includes('words') ||
       res.file_path === 'text' ||
       res.link?.startsWith('data:text')
-    );
+    ) return true;
+
+    // 2. Check if resource has a real external/uploaded PDF file
+    const hasRealPdf = 
+      res.link && 
+      !res.link.includes('dummy.pdf') && 
+      !res.link.startsWith('data:text') &&
+      res.file_name && 
+      !res.file_name.toLowerCase().includes('document.pdf') && 
+      res.file_name.toLowerCase().endsWith('.pdf');
+
+    // 3. GK category resources without a real uploaded PDF are text content
+    if (res.category?.toLowerCase() === 'gk' && !hasRealPdf) {
+      return true;
+    }
+
+    // 4. Any resource with formatted quiz text or questions in description and no real PDF
+    const textDesc = res.description || '';
+    if (!hasRealPdf && (textDesc.includes('\n') || textDesc.includes('👉') || textDesc.includes('1️⃣') || textDesc.length > 80)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // Helper: format text content ensuring line breaks between questions/points
+  const formatTextContent = (text) => {
+    if (!text) return '';
+    if (text.includes('\n')) {
+      return text;
+    }
+    // If text was pasted without linebreaks, format by numbered emojis or question numbers
+    return text
+      .replace(/\s*([0-9]{1,2}️⃣)/g, '\n\n$1')
+      .replace(/\s*([0-9]{1,2}[\.\)])\s+/g, '\n\n$1 ')
+      .trim();
   };
 
   const handleCopyText = (text, id) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text);
+    const formatted = formatTextContent(text);
+    if (!formatted) return;
+    navigator.clipboard.writeText(formatted);
     setCopiedResId(id);
     addToast('உரை வெற்றிகரமாக நகலெடுக்கப்பட்டது (Copied to clipboard)!', 'success');
     setTimeout(() => setCopiedResId(null), 2500);
   };
 
   const handlePrintText = (title, text) => {
+    const formatted = formatTextContent(text);
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       window.print();
@@ -116,13 +177,13 @@ export default function ResourcesPage() {
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; line-height: 1.8; color: #111; max-width: 800px; margin: 0 auto; }
             h1 { border-bottom: 2px solid #d71920; padding-bottom: 10px; font-size: 22px; color: #d71920; }
             .meta { color: #666; font-size: 13px; margin-bottom: 20px; }
-            .content { white-space: pre-wrap; font-size: 15px; }
+            .content { white-space: pre-wrap; font-size: 15px; word-break: break-word; }
           </style>
         </head>
         <body>
           <h1>${title}</h1>
           <div class="meta">Edufamily Educational Portal • General Knowledge & Quiz</div>
-          <div class="content">${(text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          <div class="content">${(formatted || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
         </body>
       </html>
     `);
@@ -136,8 +197,9 @@ export default function ResourcesPage() {
 
   const handleDownload = async (res) => {
     const isText = isTextResource(res);
-    const rawFileName = res.file_name || (isText ? `${res.title || 'gk_quiz'}.txt` : `${res.title || 'document'}.pdf`);
-    // Clean filename: remove leading timestamp prefix if present (e.g. 1791183623848_gr_06... -> gr_06...)
+    const titleSlug = (res.title || 'GK_Content').trim().replace(/[^a-zA-Z0-9\u0B80-\u0BFF]/g, '_').slice(0, 40) || 'GK_Content';
+    const rawFileName = isText ? `${titleSlug}.txt` : (res.file_name || `${res.title || 'document'}.pdf`);
+    // Clean filename: remove leading timestamp prefix if present
     const cleanFileName = rawFileName.replace(/^\d+_/, '');
     
     addToast(`${res.title} பதிவிறக்கம் தொடங்குகிறது...`, 'success');
@@ -153,10 +215,22 @@ export default function ResourcesPage() {
       setResources(prev => prev.map(item => item.id === res.id ? { ...item, downloads: (item.downloads || 0) + 1 } : item));
     }
 
-    let fileUrl = res.link || res.file_path;
-    if (isText && (!fileUrl || fileUrl === 'text')) {
-      fileUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(res.description || res.title)}`;
+    if (isText) {
+      const formatted = formatTextContent(res.description || res.title || '');
+      const textData = `${res.title || 'பொது அறிவு (GK)'}\n${'='.repeat(40)}\n\n${formatted}\n\n${'='.repeat(40)}\nEdufamily Educational Portal • www.edufamily.lk`;
+      const blob = new Blob([textData], { type: 'text/plain;charset=utf-8' });
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = cleanFileName.endsWith('.txt') ? cleanFileName : `${cleanFileName}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1500);
+      return;
     }
+
+    let fileUrl = res.link || res.file_path;
     if (!fileUrl) return;
 
     try {
@@ -282,31 +356,56 @@ export default function ResourcesPage() {
                     </div>
 
                     <div>
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-                        <button 
-                          onClick={() => setActiveModalResource(res)} 
-                          className="btn btn-secondary" 
-                          style={{ flexGrow: 1, padding: '8px', fontSize: '0.85rem' }}
-                        >
-                          {isText ? <BookOpen size={14} /> : <Eye size={14} />}
-                          <span>{isText ? 'வாசிக்க (Read)' : 'விபரம் (View)'}</span>
-                        </button>
+                      {isText ? (
+                        <div style={{ marginBottom: '14px' }}>
+                          <button 
+                            onClick={() => setActiveModalResource(res)} 
+                            className="btn btn-primary" 
+                            style={{ width: '100%', padding: '9px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                          >
+                            <BookOpen size={16} />
+                            <span>வாசிக்க (Read)</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                          <button 
+                            onClick={() => setActiveModalResource(res)} 
+                            className="btn btn-secondary" 
+                            style={{ flexGrow: 1, padding: '8px', fontSize: '0.85rem' }}
+                          >
+                            <Eye size={14} />
+                            <span>விபரம் (View)</span>
+                          </button>
 
-                        <button 
-                          onClick={() => handleDownload(res)} 
-                          className="download-btn"
-                          style={{ flexGrow: 1, justifyContent: 'center' }}
-                        >
-                          <Download size={14} />
-                          <span>Download</span>
-                        </button>
-                      </div>
+                          <button 
+                            onClick={() => handleDownload(res)} 
+                            className="download-btn"
+                            style={{ flexGrow: 1, justifyContent: 'center' }}
+                          >
+                            <Download size={14} />
+                            <span>Download</span>
+                          </button>
+                        </div>
+                      )}
 
                       <div className="res-meta">
-                        <span>{res.file_size || (isText ? 'Text Resource' : 'PDF Document')}</span>
-                        <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                          {res.downloads || 0} Downloads
+                        <span>
+                          {isText 
+                            ? (res.file_size?.includes('சொற்கள்') || res.file_size?.includes('Text') 
+                                ? res.file_size 
+                                : `${(res.description || '').split(/\s+/).filter(Boolean).length} சொற்கள் (Text)`)
+                            : (res.file_size || 'PDF Document')}
                         </span>
+                        {isText ? (
+                          <span style={{ fontWeight: 600, color: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                            <AlignLeft size={13} /> நேரடி வாசிப்பு
+                          </span>
+                        ) : (
+                          <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                            {res.downloads || 0} Downloads
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -319,8 +418,8 @@ export default function ResourcesPage() {
 
       {/* Resource Detail Modal */}
       {activeModalResource && (
-        <div className="modal-overlay">
-          <div className="card modal-dialog-card" style={{ maxWidth: isTextResource(activeModalResource) ? '620px' : '520px' }}>
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setActiveModalResource(null); }}>
+          <div className="card modal-dialog-card" style={{ maxWidth: isTextResource(activeModalResource) ? '680px' : '520px', width: '92%' }}>
             <button 
               onClick={() => setActiveModalResource(null)} 
               className="icon-btn" 
@@ -351,7 +450,9 @@ export default function ResourcesPage() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', background: 'var(--bg-light)', padding: '10px 14px', borderRadius: '10px' }}>
                   <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    {activeModalResource.file_size || 'Text'} • {activeModalResource.downloads || 0} பதிவிறக்கங்கள்
+                    {activeModalResource.file_size?.includes('சொற்கள்') || activeModalResource.file_size?.includes('Text')
+                      ? activeModalResource.file_size
+                      : `${formatTextContent(activeModalResource.description).split(/\s+/).filter(Boolean).length} சொற்கள் (Text)`}
                   </span>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
@@ -404,17 +505,17 @@ export default function ResourcesPage() {
                   background: 'var(--bg-light)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '12px',
-                  padding: '16px 18px',
-                  maxHeight: '360px',
+                  padding: '18px 20px',
+                  maxHeight: '400px',
                   overflowY: 'auto',
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
-                  lineHeight: '1.8',
+                  lineHeight: '1.85',
                   fontSize: '0.96rem',
                   color: 'var(--text-main)',
                   marginBottom: '20px'
                 }}>
-                  {activeModalResource.description || 'உரை உள்ளடக்கம் கிடைக்கவில்லை.'}
+                  {formatTextContent(activeModalResource.description) || 'உரை உள்ளடக்கம் கிடைக்கவில்லை.'}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -430,22 +531,19 @@ export default function ResourcesPage() {
 
                   <button 
                     type="button"
-                    onClick={() => {
-                      handleDownload(activeModalResource);
-                      setActiveModalResource(null);
-                    }} 
+                    onClick={() => handlePrintText(activeModalResource.title, activeModalResource.description)} 
                     className="btn btn-primary" 
                     style={{ justifyContent: 'center', padding: '10px' }}
                   >
-                    <Download size={16} />
-                    <span>Text கோப்பாகப் பதிவிறக்கு</span>
+                    <Printer size={16} />
+                    <span>அச்சிடு / PDF (Print)</span>
                   </button>
                 </div>
               </div>
             ) : (
               /* Standard PDF View */
               <div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '24px' }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '24px', whiteSpace: 'pre-wrap' }}>
                   {activeModalResource.description || 'இந்தக் கல்வி வளத்தில் விரிவான பாடக் குறிப்புகள் மற்றும் மாதிரி வினாக்கள் இடம்பெற்றுள்ளன.'}
                 </p>
 

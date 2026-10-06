@@ -13,12 +13,16 @@ import AnnouncementsPage from './pages/AnnouncementsPage';
 import ContactPage from './pages/ContactPage';
 import AdminPage from './pages/AdminPage';
 
-// Scroll to top on page navigation
+import { trackPageView } from './lib/visitorTracker';
+
+// Scroll to top on page navigation and track visitor page views
 function ScrollToTop() {
   const { pathname } = useLocation();
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    // Track visitor count across the website
+    trackPageView(pathname);
   }, [pathname]);
 
   return null;
