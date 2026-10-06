@@ -21,24 +21,24 @@ const getTodayString = () => {
   return `${year}-${month}-${day}`;
 };
 
-// Realistic starting baseline if no prior database records exist
+// Clean zero baseline for genuine visitor tracking
 export const getInitialBaselineStats = () => {
   const today = getTodayString();
   return {
-    total_visits: 1680,
-    unique_visitors: 620,
-    today_visits: 42,
+    total_visits: 0,
+    unique_visitors: 0,
+    today_visits: 0,
     today_date: today,
     daily_stats: {
-      [today]: 42
+      [today]: 0
     },
     page_views: {
-      '/': 780,
-      '/resources': 490,
-      '/events': 220,
-      '/announcements': 110,
-      '/about': 50,
-      '/contact': 30
+      '/': 0,
+      '/resources': 0,
+      '/events': 0,
+      '/announcements': 0,
+      '/about': 0,
+      '/contact': 0
     },
     last_updated: new Date().toISOString()
   };
@@ -69,7 +69,7 @@ export const getLiveChannel = () => {
     .on('presence', { event: 'sync' }, () => {
       const state = liveChannelInstance.presenceState();
       // Count unique presence keys (active users currently on website)
-      const count = Math.max(1, Object.keys(state).length);
+      const count = Object.keys(state).length;
       presenceListeners.forEach(listener => {
         try { listener(count, state); } catch (e) {}
       });
@@ -358,4 +358,12 @@ export const updateVisitorBaseline = async (newStats) => {
     console.error('Failed to update visitor baseline:', e);
     return false;
   }
+};
+
+/**
+ * Resets visitor counts completely back to 0
+ */
+export const resetVisitorStatsToZero = async () => {
+  const fresh = getInitialBaselineStats();
+  return await updateVisitorBaseline(fresh);
 };

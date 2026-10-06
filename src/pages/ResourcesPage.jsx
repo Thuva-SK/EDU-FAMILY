@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   BookOpen, 
   Search, 
@@ -13,19 +14,26 @@ import {
   AlignLeft,
   Copy,
   Check,
-  Printer
+  Printer,
+  Share2,
+  Link as LinkIcon
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 
 export default function ResourcesPage() {
   const { addToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const targetResourceId = searchParams.get('id') || searchParams.get('resource');
+
   const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalResource, setActiveModalResource] = useState(null);
   const [copiedResId, setCopiedResId] = useState(null);
+  const [copiedShareId, setCopiedShareId] = useState(null);
+  const [highlightedId, setHighlightedId] = useState(null);
 
   useEffect(() => {
     fetchResources();
@@ -42,6 +50,30 @@ export default function ResourcesPage() {
       supabase.removeChannel(subscription);
     };
   }, []);
+
+  // Handle direct link redirection to a specific resource (e.g. /resources?id=123)
+  useEffect(() => {
+    if (!targetResourceId || resources.length === 0) return;
+    const target = resources.find(r => String(r.id) === String(targetResourceId));
+    if (target) {
+      setSelectedCategory('All');
+      setSearchQuery('');
+      setHighlightedId(target.id);
+      setActiveModalResource(target);
+
+      setTimeout(() => {
+        const el = document.getElementById(`resource-${target.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 350);
+
+      const timer = setTimeout(() => {
+        setHighlightedId(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [resources, targetResourceId]);
 
   const fetchResources = async (isBackground = false) => {
     try {
@@ -195,6 +227,27 @@ export default function ResourcesPage() {
     }, 400);
   };
 
+  const handleShareResource = (res) => {
+    const url = `${window.location.origin}/resources?id=${res.id}`;
+    if (navigator.share) {
+      navigator.share({
+        title: `${res.title} - EDU FAMILY`,
+        text: `${res.title} - Edufamily கல்வி வளம்`,
+        url: url
+      }).catch(() => {
+        navigator.clipboard.writeText(url);
+        setCopiedShareId(res.id);
+        addToast('வளத்தின் நேரடி இணைப்பு நகலெடுக்கப்பட்டது! (Link copied)', 'success');
+        setTimeout(() => setCopiedShareId(null), 2500);
+      });
+    } else {
+      navigator.clipboard.writeText(url);
+      setCopiedShareId(res.id);
+      addToast('வளத்தின் நேரடி இணைப்பு நகலெடுக்கப்பட்டது! (Link copied to clipboard)', 'success');
+      setTimeout(() => setCopiedShareId(null), 2500);
+    }
+  };
+
   const handleDownload = async (res) => {
     const isText = isTextResource(res);
     const titleSlug = (res.title || 'GK_Content').trim().replace(/[^a-zA-Z0-9\u0B80-\u0BFF]/g, '_').slice(0, 40) || 'GK_Content';
@@ -330,7 +383,16 @@ export default function ResourcesPage() {
               {filteredResources.map((res) => {
                 const isText = isTextResource(res);
                 return (
-                  <div key={res.id} className="card resource-card">
+                  <div 
+                    key={res.id} 
+                    id={`resource-${res.id}`} 
+                    className={`card resource-card ${highlightedId === res.id ? 'highlight-resource-card' : ''}`}
+                    style={{
+                      transition: 'all 0.35s ease',
+                      border: highlightedId === res.id ? '2px solid var(--primary)' : undefined,
+                      boxShadow: highlightedId === res.id ? '0 0 24px rgba(215, 25, 32, 0.45)' : undefined
+                    }}
+                  >
                     <div>
                       <div className="res-header" style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -345,10 +407,33 @@ export default function ResourcesPage() {
                             </span>
                           )}
                         </div>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Calendar size={12} />
-                          {res.date || '2024'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Calendar size={12} />
+                            {res.date || '2024'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShareResource(res);
+                            }}
+                            className="icon-btn"
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              padding: 0,
+                              background: copiedShareId === res.id ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-light)',
+                              color: copiedShareId === res.id ? '#16a34a' : 'var(--text-muted)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                            title="நேரடி இணைப்பைப் பகிர் (Share Resource Link)"
+                          >
+                            {copiedShareId === res.id ? <Check size={13} color="#16a34a" /> : <Share2 size={13} />}
+                          </button>
+                        </div>
                       </div>
 
                       <h3 className="res-title" style={{ marginBottom: '10px' }}>{res.title}</h3>
@@ -428,17 +513,37 @@ export default function ResourcesPage() {
               <X size={18} />
             </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <span className="category-tag">{activeModalResource.category}</span>
-              {isTextResource(activeModalResource) ? (
-                <span style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.12)', color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <AlignLeft size={12} /> பொது அறிவு உரை வளம் (GK Text Resource)
-                </span>
-              ) : (
-                <span style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '12px', background: 'rgba(215, 25, 32, 0.1)', color: 'var(--primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <FileText size={12} /> PDF ஆவணம்
-                </span>
-              )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px', paddingRight: '40px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="category-tag">{activeModalResource.category}</span>
+                {isTextResource(activeModalResource) ? (
+                  <span style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.12)', color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <AlignLeft size={12} /> பொது அறிவு உரை வளம் (GK Text Resource)
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '12px', background: 'rgba(215, 25, 32, 0.1)', color: 'var(--primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <FileText size={12} /> PDF ஆவணம்
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleShareResource(activeModalResource)}
+                className="btn btn-secondary"
+                style={{
+                  padding: '5px 12px',
+                  fontSize: '0.78rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderColor: copiedShareId === activeModalResource.id ? 'rgba(34, 197, 94, 0.4)' : undefined,
+                  color: copiedShareId === activeModalResource.id ? '#16a34a' : undefined
+                }}
+                title="வளத்தின் நேரடி இணைப்பைப் பகிர் (Share Resource Link)"
+              >
+                {copiedShareId === activeModalResource.id ? <Check size={13} color="#16a34a" /> : <Share2 size={13} />}
+                <span>{copiedShareId === activeModalResource.id ? 'நகலெடுக்கப்பட்டது!' : 'பகிர் (Share)'}</span>
+              </button>
             </div>
 
             <h2 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '16px', lineHeight: '1.4' }}>

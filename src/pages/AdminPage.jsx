@@ -37,13 +37,16 @@ import {
   Activity,
   Radio,
   Zap,
-  Wifi
+  Wifi,
+  RotateCcw,
+  Share2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { 
   getVisitorStats, 
   updateVisitorBaseline, 
+  resetVisitorStatsToZero,
   onLiveVisitorCount, 
   onBroadcastVisit, 
   getLiveChannel 
@@ -72,7 +75,7 @@ export default function AdminPage() {
 
   // Visitor Analytics states
   const [visitorStats, setVisitorStats] = useState(null);
-  const [liveOnlineCount, setLiveOnlineCount] = useState(1);
+  const [liveOnlineCount, setLiveOnlineCount] = useState(0);
   const [recentLiveEvents, setRecentLiveEvents] = useState([]);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [showEditBaselineModal, setShowEditBaselineModal] = useState(false);
@@ -97,6 +100,7 @@ export default function AdminPage() {
   const [showEditTextPreview, setShowEditTextPreview] = useState(false);
   const [editPdfFile, setEditPdfFile] = useState(null);
   const [isUpdatingRes, setIsUpdatingRes] = useState(false);
+  const [copiedResLinkId, setCopiedResLinkId] = useState(null);
 
   const [showEvtModal, setShowEvtModal] = useState(false);
   const [newEvt, setNewEvt] = useState({ title: '', date: '', location: 'Zoom Online', description: '', cover_image: '' });
@@ -127,6 +131,17 @@ export default function AdminPage() {
   const [newAdmin, setNewAdmin] = useState({ name: '', email: '', password: '', role: 'Admin' });
   const [isSubmittingAdmin, setIsSubmittingAdmin] = useState(false);
   const [showAdminPasswordInTable, setShowAdminPasswordInTable] = useState({});
+
+  // Change Password Modal states
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [targetAdminForPasswordChange, setTargetAdminForPasswordChange] = useState(null);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const currentAdminEmail = (sessionStorage.getItem('edufamily_admin_email') || 'adminbabi@gmail.com').toLowerCase().trim();
   const isSuperAdmin = currentAdminEmail === 'adminbabi@gmail.com';
@@ -261,11 +276,24 @@ export default function AdminPage() {
       setInquiries(inqData || []);
 
       // Fetch users / admins
+      let superPass = localStorage.getItem('edufamily_super_admin_pass') || 'edufamilyadmin-babi';
+      try {
+        const { data: psData } = await supabase
+          .from('portal_settings')
+          .select('setting_value')
+          .eq('setting_key', 'admin_password_adminbabi@gmail.com')
+          .maybeSingle();
+        if (psData?.setting_value) {
+          superPass = psData.setting_value;
+          localStorage.setItem('edufamily_super_admin_pass', superPass);
+        }
+      } catch (e) {}
+
       const superAdminDefault = {
         id: 1,
         name: 'Babi',
         email: 'adminbabi@gmail.com',
-        password_hash: 'edufamilyadmin-babi',
+        password_hash: superPass,
         role: 'Super Admin',
         status: 'Active',
         avatar: 'BA',
@@ -339,7 +367,10 @@ export default function AdminPage() {
     const updated = {
       ...(visitorStats || {}),
       total_visits: newTotal,
-      unique_visitors: newUnique
+      unique_visitors: newUnique,
+      today_visits: newTotal === 0 ? 0 : (visitorStats?.today_visits || 0),
+      ...(newTotal === 0 ? { page_views: {}, daily_stats: {} } : {}),
+      last_updated: new Date().toISOString()
     };
     const success = await updateVisitorBaseline(updated);
     if (success) {
@@ -351,6 +382,23 @@ export default function AdminPage() {
     }
   };
 
+  const handleResetToZero = async () => {
+    if (!window.confirm('பார்வையாளர்கள் எண்ணிக்கை முழுவதையும் 0 ஆக மீட்டமைக்க வேண்டுமா? (Are you sure you want to reset all visitor statistics to 0?)')) {
+      return;
+    }
+    const success = await resetVisitorStatsToZero();
+    if (success) {
+      const stats = await getVisitorStats();
+      setVisitorStats(stats);
+      setCustomTotalVisits('0');
+      setCustomUniqueVisitors('0');
+      setShowEditBaselineModal(false);
+      addToast('பார்வையாளர்கள் விபரம் 0 ஆக மீட்டமைக்கப்பட்டது!', 'success');
+    } else {
+      addToast('மீட்டமைப்பதில் பிழை ஏற்பட்டது!', 'error');
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -359,10 +407,26 @@ export default function AdminPage() {
     const pass = adminPassword.trim();
 
     // 1. Super Admin credentials check (adminbabi@gmail.com)
+    let currentSuperPass = localStorage.getItem('edufamily_super_admin_pass');
+    if (!currentSuperPass) {
+      try {
+        const { data: ps } = await supabase
+          .from('portal_settings')
+          .select('setting_value')
+          .eq('setting_key', 'admin_password_adminbabi@gmail.com')
+          .maybeSingle();
+        if (ps?.setting_value) {
+          currentSuperPass = ps.setting_value;
+          localStorage.setItem('edufamily_super_admin_pass', currentSuperPass);
+        }
+      } catch (e) {}
+    }
+    const validSuperPass = currentSuperPass || 'edufamilyadmin-babi';
+
     if (
-      (email === 'adminbabi@gmail.com' && pass === 'edufamilyadmin-babi') ||
-      (email === 'admin' && (pass === 'edufamilyadmin-babi' || pass === '1234' || pass === 'admin')) ||
-      (pass === 'edufamilyadmin-babi')
+      (email === 'adminbabi@gmail.com' && (pass === validSuperPass || pass === 'edufamilyadmin-babi')) ||
+      (email === 'admin' && (pass === validSuperPass || pass === 'edufamilyadmin-babi' || pass === '1234' || pass === 'admin')) ||
+      (pass === validSuperPass)
     ) {
       setIsAuthenticated(true);
       sessionStorage.setItem('edufamily_admin_auth', 'true');
@@ -402,7 +466,26 @@ export default function AdminPage() {
       console.warn(err);
     }
 
-    // 3. Local cache fallback check (if saved locally)
+    // 3. Check portal_settings custom password for any admin
+    try {
+      const { data: settingData } = await supabase
+        .from('portal_settings')
+        .select('setting_value')
+        .eq('setting_key', `admin_password_${email}`)
+        .maybeSingle();
+      if (settingData?.setting_value && settingData.setting_value === pass) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('edufamily_admin_auth', 'true');
+        sessionStorage.setItem('edufamily_admin_email', email);
+        sessionStorage.setItem('edufamily_admin_name', email.split('@')[0]);
+        sessionStorage.setItem('edufamily_admin_role', email === 'adminbabi@gmail.com' ? 'Super Admin' : 'Admin');
+        addToast('வரவேற்கிறோம்! (Admin Login Successful)', 'success');
+        setIsSubmitting(false);
+        return;
+      }
+    } catch (err) {}
+
+    // 4. Local cache fallback check (if saved locally)
     try {
       const localAdmins = JSON.parse(localStorage.getItem('edufamily_local_admins') || '[]');
       const matched = localAdmins.find(a => a.email.toLowerCase() === email && a.password_hash === pass);
@@ -438,6 +521,109 @@ export default function AdminPage() {
     setAdminPassword('');
     setActiveTab('resources');
     addToast('வெளியேற்றப்பட்டது (Logged Out)', 'info');
+  };
+
+  // Change Admin Password function (Self or by Super Admin)
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    const isEditingSelf = !targetAdminForPasswordChange || targetAdminForPasswordChange.email.toLowerCase() === currentAdminEmail;
+    const targetEmail = (targetAdminForPasswordChange ? targetAdminForPasswordChange.email : currentAdminEmail).toLowerCase().trim();
+    const targetName = targetAdminForPasswordChange ? targetAdminForPasswordChange.name : (sessionStorage.getItem('edufamily_admin_name') || 'Admin');
+
+    const newPass = newPasswordInput.trim();
+    const confirmPass = confirmPasswordInput.trim();
+
+    if (!newPass) {
+      addToast('தயவுசெய்து புதிய கடவுச்சொல்லை உள்ளிடவும் (New password is required)', 'error');
+      return;
+    }
+    if (newPass.length < 4) {
+      addToast('கடவுச்சொல் குறைந்தது 4 எழுத்துக்களைக் கொண்டிருக்க வேண்டும் (Min 4 characters)', 'error');
+      return;
+    }
+    if (newPass !== confirmPass) {
+      addToast('கடவுச்சொற்கள் பொருந்தவில்லை! (Passwords do not match)', 'error');
+      return;
+    }
+
+    // If changing own password, verify current password
+    if (isEditingSelf) {
+      const currentPass = currentPasswordInput.trim();
+      const existingAdm = admins.find(a => a.email.toLowerCase() === targetEmail);
+      const expectedPass = existingAdm?.password_hash || (targetEmail === 'adminbabi@gmail.com' ? (localStorage.getItem('edufamily_super_admin_pass') || 'edufamilyadmin-babi') : '');
+      if (expectedPass && currentPass !== expectedPass) {
+        addToast('தற்போதைய கடவுச்சொல் தவறானது! (Current password is incorrect)', 'error');
+        return;
+      }
+    }
+
+    setIsChangingPassword(true);
+
+    try {
+      const existingAdm = admins.find(a => a.email.toLowerCase() === targetEmail);
+      const userPayload = {
+        id: existingAdm?.id || (targetEmail === 'adminbabi@gmail.com' ? 1 : Date.now()),
+        name: targetName || existingAdm?.name || 'Admin',
+        email: targetEmail,
+        password_hash: newPass,
+        role: existingAdm?.role || (targetEmail === 'adminbabi@gmail.com' ? 'Super Admin' : 'Admin'),
+        avatar: existingAdm?.avatar || (targetName.slice(0, 2) || 'AD').toUpperCase(),
+        status: existingAdm?.status || 'Active'
+      };
+
+      // 1. Update in Supabase users table
+      try {
+        const { error: upsertErr } = await supabase
+          .from('users')
+          .upsert([userPayload], { onConflict: 'email' });
+        if (upsertErr) {
+          console.warn('Upsert user error:', upsertErr.message);
+          await supabase.from('users').update({ password_hash: newPass }).eq('email', targetEmail);
+        }
+      } catch (err) {
+        console.warn('DB error updating password:', err);
+      }
+
+      // 2. Also save to portal_settings as safe persistent backup
+      try {
+        await supabase.from('portal_settings').upsert([{
+          setting_key: `admin_password_${targetEmail}`,
+          setting_value: newPass,
+          updated_at: new Date().toISOString()
+        }], { onConflict: 'setting_key' });
+      } catch (err) {}
+
+      // 3. Update localStorage
+      if (targetEmail === 'adminbabi@gmail.com') {
+        localStorage.setItem('edufamily_super_admin_pass', newPass);
+      }
+      const localAdmins = JSON.parse(localStorage.getItem('edufamily_local_admins') || '[]');
+      const updatedLocal = localAdmins.map(a => 
+        a.email.toLowerCase() === targetEmail ? { ...a, password_hash: newPass } : a
+      );
+      if (!updatedLocal.some(a => a.email.toLowerCase() === targetEmail)) {
+        updatedLocal.push(userPayload);
+      }
+      localStorage.setItem('edufamily_local_admins', JSON.stringify(updatedLocal));
+
+      // 4. Update in React state
+      setAdmins(prev => prev.map(a => 
+        a.email.toLowerCase() === targetEmail ? { ...a, password_hash: newPass } : a
+      ));
+
+      // 5. Clean up modal states
+      setShowChangePasswordModal(false);
+      setTargetAdminForPasswordChange(null);
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      setIsChangingPassword(false);
+      addToast('கடவுச்சொல் வெற்றிகரமாக மாற்றப்பட்டது! (Password updated successfully)', 'success');
+    } catch (error) {
+      console.error('Password change error:', error);
+      setIsChangingPassword(false);
+      addToast('கடவுச்சொல்லை மாற்றுவதில் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.', 'error');
+    }
   };
 
   // Add new admin (Super Admin only: adminbabi@gmail.com)
@@ -732,6 +918,17 @@ export default function AdminPage() {
       addToast('சேமிப்பில் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.', 'error');
       setIsUploadingPdf(false);
     }
+  };
+
+  // Copy and Share direct link of a resource
+  const handleShareResourceLink = (r) => {
+    const url = `${window.location.origin}/resources?id=${r.id}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+    }
+    setCopiedResLinkId(r.id);
+    addToast(`'${r.title}' நேரடி இணைப்பு நகலெடுக்கப்பட்டது! (Direct link copied)`, 'success');
+    setTimeout(() => setCopiedResLinkId(null), 2500);
   };
 
   // Delete Resource
@@ -1629,10 +1826,28 @@ export default function AdminPage() {
             </div>
             <h1 style={{ fontSize: '1.8rem', fontWeight: 800 }}>Edufamily நிர்வாகப் பகுதி</h1>
           </div>
-          <button onClick={handleLogout} className="btn btn-secondary" style={{ padding: '8px 18px', fontSize: '0.9rem', color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            <LogOut size={16} />
-            <span>வெளியேறு (Logout)</span>
-          </button>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setTargetAdminForPasswordChange(null);
+                setCurrentPasswordInput('');
+                setNewPasswordInput('');
+                setConfirmPasswordInput('');
+                setShowChangePasswordModal(true);
+              }}
+              className="btn btn-secondary"
+              style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+              title="உங்கள் நிர்வாகக் கடவுச்சொல்லை மாற்றவும்"
+            >
+              <Key size={16} color="var(--primary)" />
+              <span>கடவுச்சொல் மாற்று (Change Password)</span>
+            </button>
+            <button onClick={handleLogout} className="btn btn-secondary" style={{ padding: '8px 18px', fontSize: '0.9rem', color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <LogOut size={16} />
+              <span>வெளியேறு (Logout)</span>
+            </button>
+          </div>
         </div>
 
         {/* KPI Summary Cards */}
@@ -1874,6 +2089,28 @@ export default function AdminPage() {
                           </td>
                           <td style={{ padding: '12px', textAlign: 'right' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleShareResourceLink(r)}
+                                style={{
+                                  background: copiedResLinkId === r.id ? 'rgba(34, 197, 94, 0.15)' : 'rgba(139, 92, 246, 0.12)',
+                                  border: copiedResLinkId === r.id ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(139, 92, 246, 0.25)',
+                                  color: copiedResLinkId === r.id ? '#16a34a' : '#8b5cf6',
+                                  cursor: 'pointer',
+                                  padding: '5px 9px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 600,
+                                  transition: 'all 0.2s'
+                                }}
+                                title="நேரடி இணைப்பைப் பகிர் (Share Direct Link)"
+                              >
+                                {copiedResLinkId === r.id ? <Check size={14} /> : <Share2 size={14} />}
+                                <span>{copiedResLinkId === r.id ? 'நகலெடுக்கப்பட்டது' : 'பகிர்'}</span>
+                              </button>
                               <button
                                 onClick={() => handleOpenEditResource(r)}
                                 style={{
@@ -2331,8 +2568,8 @@ export default function AdminPage() {
                             {adm.email}
                           </td>
                           <td style={{ padding: '12px', fontSize: '0.85rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontFamily: showPass ? 'monospace' : 'inherit', letterSpacing: showPass ? '1px' : '0' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontFamily: showPass ? 'monospace' : 'inherit', letterSpacing: showPass ? '1px' : '0', fontWeight: showPass ? 700 : 400 }}>
                                 {showPass ? (adm.password_hash || '••••••') : '••••••••'}
                               </span>
                               <button
@@ -2342,6 +2579,33 @@ export default function AdminPage() {
                                 title={showPass ? 'கடவுச்சொல்லை மறை' : 'கடவுச்சொல்லைக் காட்டு'}
                               >
                                 {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTargetAdminForPasswordChange(adm);
+                                  setCurrentPasswordInput('');
+                                  setNewPasswordInput('');
+                                  setConfirmPasswordInput('');
+                                  setShowChangePasswordModal(true);
+                                }}
+                                style={{
+                                  background: 'rgba(215, 25, 32, 0.08)',
+                                  border: '1px solid rgba(215, 25, 32, 0.2)',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  color: 'var(--primary)',
+                                  padding: '2px 8px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="கடவுச்சொல்லை மாற்றவும் (Change Password)"
+                              >
+                                <Key size={11} />
+                                <span>மாற்று</span>
                               </button>
                             </div>
                           </td>
@@ -2371,18 +2635,34 @@ export default function AdminPage() {
                             </button>
                           </td>
                           <td style={{ padding: '12px', textAlign: 'right' }}>
-                            {isMainSuper ? (
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>பாதுகாக்கப்பட்டது</span>
-                            ) : (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                               <button
                                 type="button"
-                                onClick={() => handleDeleteAdmin(adm.id, adm.email)}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
-                                title="இந்த நிர்வாகியை நீக்கு"
+                                onClick={() => {
+                                  setTargetAdminForPasswordChange(adm);
+                                  setCurrentPasswordInput('');
+                                  setNewPasswordInput('');
+                                  setConfirmPasswordInput('');
+                                  setShowChangePasswordModal(true);
+                                }}
+                                className="icon-btn"
+                                style={{ width: '30px', height: '30px', color: 'var(--primary)', background: 'rgba(215, 25, 32, 0.08)' }}
+                                title="கடவுச்சொல் மாற்று (Change Password)"
                               >
-                                <Trash2 size={17} />
+                                <Key size={14} />
                               </button>
-                            )}
+                              {!isMainSuper && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAdmin(adm.id, adm.email)}
+                                  className="icon-btn delete-btn"
+                                  style={{ width: '30px', height: '30px', color: '#ef4444' }}
+                                  title="இந்த நிர்வாகியை நீக்கு"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2520,16 +2800,16 @@ export default function AdminPage() {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {[
-                    { path: '/', label: 'முகப்பு பக்கம் (Homepage)', defaultViews: 780 },
-                    { path: '/resources', label: 'கல்வி வளங்கள் (Resources & Past Papers)', defaultViews: 490 },
-                    { path: '/events', label: 'கருத்தரங்குகள் (Live Seminars & Workshops)', defaultViews: 220 },
-                    { path: '/announcements', label: 'அறிவிப்புகள் (Announcements & News Flash)', defaultViews: 110 },
-                    { path: '/about', label: 'எங்களைப் பற்றி (About Edufamily)', defaultViews: 50 },
-                    { path: '/contact', label: 'தொடர்பு & WhatsApp (Contact Us)', defaultViews: 30 }
+                    { path: '/', label: 'முகப்பு பக்கம் (Homepage)' },
+                    { path: '/resources', label: 'கல்வி வளங்கள் (Resources & Past Papers)' },
+                    { path: '/events', label: 'கருத்தரங்குகள் (Live Seminars & Workshops)' },
+                    { path: '/announcements', label: 'அறிவிப்புகள் (Announcements & News Flash)' },
+                    { path: '/about', label: 'எங்களைப் பற்றி (About Edufamily)' },
+                    { path: '/contact', label: 'தொடர்பு & WhatsApp (Contact Us)' }
                   ].map((page) => {
-                    const views = visitorStats?.page_views?.[page.path] || page.defaultViews;
-                    const total = visitorStats?.total_visits || 1680;
-                    const percent = Math.min(100, Math.round((views / total) * 100));
+                    const views = visitorStats?.page_views?.[page.path] || 0;
+                    const total = visitorStats?.total_visits || 0;
+                    const percent = total > 0 ? Math.min(100, Math.round((views / total) * 100)) : 0;
 
                     return (
                       <div key={page.path}>
@@ -2555,7 +2835,7 @@ export default function AdminPage() {
                   </h4>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {Object.entries(visitorStats?.daily_stats || { [new Date().toISOString().split('T')[0]]: visitorStats?.today_visits || 42 })
+                    {Object.entries(visitorStats?.daily_stats || { [new Date().toISOString().split('T')[0]]: visitorStats?.today_visits || 0 })
                       .slice(-5)
                       .reverse()
                       .map(([date, count]) => (
@@ -4228,22 +4508,190 @@ export default function AdminPage() {
                 />
               </div>
 
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowEditBaselineModal(false)}
+                    className="btn btn-secondary"
+                    style={{ flexGrow: 1 }}
+                  >
+                    ரத்து செய்
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    <Check size={16} />
+                    <span>சேமி (Save)</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleResetToZero}
+                  className="btn btn-secondary"
+                  style={{ width: '100%', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+                >
+                  <RotateCcw size={15} />
+                  <span>எல்லாவற்றையும் 0 ஆக மீட்டமை (Reset all to 0)</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Change Password Modal */}
+      {showChangePasswordModal && (
+        <div className="modal-overlay">
+          <div className="card modal-dialog-card" style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Key size={20} color="var(--primary)" />
+                  <span>
+                    {targetAdminForPasswordChange && targetAdminForPasswordChange.email.toLowerCase() !== currentAdminEmail
+                      ? `கடவுச்சொல் மாற்றம் (${targetAdminForPasswordChange.name})`
+                      : 'கடவுச்சொல் மாற்றம் (Change Password)'}
+                  </span>
+                </h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {targetAdminForPasswordChange && targetAdminForPasswordChange.email.toLowerCase() !== currentAdminEmail
+                    ? `${targetAdminForPasswordChange.email} கணக்கின் கடவுச்சொல்லை மாற்றவும்`
+                    : `${currentAdminEmail} கணக்கிற்கான புதிய கடவுச்சொல்லை அமைக்கவும்`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowChangePasswordModal(false);
+                  setTargetAdminForPasswordChange(null);
+                  setCurrentPasswordInput('');
+                  setNewPasswordInput('');
+                  setConfirmPasswordInput('');
+                }}
+                className="icon-btn"
+                style={{ width: '32px', height: '32px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangePassword}>
+              {/* If changing own password, ask for current password */}
+              {(!targetAdminForPasswordChange || targetAdminForPasswordChange.email.toLowerCase() === currentAdminEmail) && (
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                    தற்போதைய கடவுச்சொல் (Current Password) *
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showCurrentPass ? 'text' : 'password'}
+                      value={currentPasswordInput}
+                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                      placeholder="தற்போதைய கடவுச்சொல்லை உள்ளிடவும்"
+                      style={{ width: '100%', padding: '10px 40px 10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.95rem' }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPass(!showCurrentPass)}
+                      style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                      title={showCurrentPass ? 'மறை' : 'காட்டு'}
+                    >
+                      {showCurrentPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* New Password */}
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                  புதிய கடவுச்சொல் (New Password) *
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="குறைந்தது 4 எழுத்துக்கள் (Min 4 chars)"
+                    style={{ width: '100%', padding: '10px 40px 10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.95rem' }}
+                    required
+                    minLength={4}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPass(!showNewPass)}
+                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                    title={showNewPass ? 'மறை' : 'காட்டு'}
+                  >
+                    {showNewPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div className="form-group" style={{ marginBottom: '22px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
+                  புதிய கடவுச்சொல்லை உறுதிப்படுத்து (Confirm New Password) *
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showConfirmPass ? 'text' : 'password'}
+                    value={confirmPasswordInput}
+                    onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                    placeholder="மீண்டும் புதிய கடவுச்சொல்லை உள்ளிடவும்"
+                    style={{ width: '100%', padding: '10px 40px 10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.95rem' }}
+                    required
+                    minLength={4}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPass(!showConfirmPass)}
+                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                    title={showConfirmPass ? 'மறை' : 'காட்டு'}
+                  >
+                    {showConfirmPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {newPasswordInput && confirmPasswordInput && newPasswordInput !== confirmPasswordInput && (
+                  <p style={{ margin: '6px 0 0 0', fontSize: '0.78rem', color: '#ef4444' }}>
+                    கடவுச்சொற்கள் பொருந்தவில்லை! (Passwords do not match)
+                  </p>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
                   type="button"
-                  onClick={() => setShowEditBaselineModal(false)}
+                  onClick={() => {
+                    setShowChangePasswordModal(false);
+                    setTargetAdminForPasswordChange(null);
+                    setCurrentPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                  }}
                   className="btn btn-secondary"
                   style={{ flexGrow: 1 }}
                 >
-                  ரத்து செய்
+                  ரத்து செய் (Cancel)
                 </button>
                 <button
                   type="submit"
                   className="btn btn-primary"
                   style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  disabled={isChangingPassword || (newPasswordInput && confirmPasswordInput && newPasswordInput !== confirmPasswordInput)}
                 >
-                  <Check size={16} />
-                  <span>சேமி (Save)</span>
+                  {isChangingPassword ? (
+                    <span>மாற்றுகிறது...</span>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>கடவுச்சொல்லை மாற்று (Update)</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

@@ -17,13 +17,16 @@ import { trackPageView } from './lib/visitorTracker';
 
 // Scroll to top on page navigation and track visitor page views
 function ScrollToTop() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   useEffect(() => {
-    window.scrollTo(0, 0);
+    // Do not force scroll to top if deep linking to a specific resource
+    if (!search || (!search.includes('id=') && !search.includes('resource='))) {
+      window.scrollTo(0, 0);
+    }
     // Track visitor count across the website
     trackPageView(pathname);
-  }, [pathname]);
+  }, [pathname, search]);
 
   return null;
 }
