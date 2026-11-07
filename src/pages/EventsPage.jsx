@@ -15,8 +15,24 @@ import { useToast } from '../context/ToastContext';
 
 export default function EventsPage() {
   const { addToast } = useToast();
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_events');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return INITIAL_EVENTS;
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_events');
+      return !cached;
+    } catch (e) {
+      return false;
+    }
+  });
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -26,21 +42,24 @@ export default function EventsPage() {
 
   const fetchEvents = async (isBackground = false) => {
     try {
-      if (!isBackground) setLoading(true);
+      if (!isBackground && events.length === 0) setLoading(true);
       const { data, error } = await supabase
         .from('events')
         .select('*')
         .order('id', { ascending: false });
 
-      if (error || !data || data.length === 0) {
-        if (!isBackground) setEvents(INITIAL_EVENTS);
-      } else {
+      if (data && data.length > 0 && !error) {
         setEvents(data);
+        try {
+          localStorage.setItem('edufamily_cached_events', JSON.stringify(data));
+        } catch (e) {}
+      } else if ((!events || events.length === 0) && (error || !data)) {
+        setEvents(INITIAL_EVENTS);
       }
     } catch (err) {
-      if (!isBackground) setEvents(INITIAL_EVENTS);
+      if (!events || events.length === 0) setEvents(INITIAL_EVENTS);
     } finally {
-      if (!isBackground) setLoading(false);
+      setLoading(false);
     }
   };
 

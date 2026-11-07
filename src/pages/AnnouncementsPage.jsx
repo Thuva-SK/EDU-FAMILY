@@ -13,8 +13,24 @@ import {
 import { supabase, INITIAL_ANNOUNCEMENTS } from '../lib/supabase';
 
 export default function AnnouncementsPage() {
-  const [announcements, setAnnouncements] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [announcements, setAnnouncements] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_announcements');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return INITIAL_ANNOUNCEMENTS;
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_announcements');
+      return !cached;
+    } catch (e) {
+      return false;
+    }
+  });
   const [selectedPriority, setSelectedPriority] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnnouncement, setActiveAnnouncement] = useState(null);
@@ -25,15 +41,13 @@ export default function AnnouncementsPage() {
 
   const fetchAnnouncements = async (isBackground = false) => {
     try {
-      if (!isBackground) setLoading(true);
+      if (!isBackground && announcements.length === 0) setLoading(true);
       const { data, error } = await supabase
         .from('announcements')
         .select('*')
         .order('id', { ascending: false });
 
-      if (error || !data || data.length === 0) {
-        if (!isBackground) setAnnouncements(INITIAL_ANNOUNCEMENTS);
-      } else {
+      if (data && data.length > 0 && !error) {
         const parsed = data.map((a) => {
           const descMatch = a.title?.match(/<!--DESC:(.*?)-->/);
           return {
@@ -43,11 +57,16 @@ export default function AnnouncementsPage() {
           };
         });
         setAnnouncements(parsed);
+        try {
+          localStorage.setItem('edufamily_cached_announcements', JSON.stringify(parsed));
+        } catch (e) {}
+      } else if ((!announcements || announcements.length === 0) && (error || !data)) {
+        setAnnouncements(INITIAL_ANNOUNCEMENTS);
       }
     } catch (err) {
-      if (!isBackground) setAnnouncements(INITIAL_ANNOUNCEMENTS);
+      if (!announcements || announcements.length === 0) setAnnouncements(INITIAL_ANNOUNCEMENTS);
     } finally {
-      if (!isBackground) setLoading(false);
+      setLoading(false);
     }
   };
 

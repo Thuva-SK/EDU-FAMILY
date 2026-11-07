@@ -26,8 +26,24 @@ export default function ResourcesPage() {
   const [searchParams] = useSearchParams();
   const targetResourceId = searchParams.get('id') || searchParams.get('resource');
 
-  const [resources, setResources] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [resources, setResources] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_resources');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return INITIAL_RESOURCES;
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_resources');
+      return !cached;
+    } catch (e) {
+      return false;
+    }
+  });
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalResource, setActiveModalResource] = useState(null);
@@ -65,21 +81,24 @@ export default function ResourcesPage() {
 
   const fetchResources = async (isBackground = false) => {
     try {
-      if (!isBackground) setLoading(true);
+      if (!isBackground && resources.length === 0) setLoading(true);
       const { data, error } = await supabase
         .from('resources')
         .select('*')
         .order('id', { ascending: false });
 
-      if (error || !data || data.length === 0) {
-        if (!isBackground) setResources(INITIAL_RESOURCES);
-      } else {
+      if (data && data.length > 0 && !error) {
         setResources(data);
+        try {
+          localStorage.setItem('edufamily_cached_resources', JSON.stringify(data));
+        } catch (e) {}
+      } else if ((!resources || resources.length === 0) && (error || !data)) {
+        setResources(INITIAL_RESOURCES);
       }
     } catch (err) {
-      if (!isBackground) setResources(INITIAL_RESOURCES);
+      if (!resources || resources.length === 0) setResources(INITIAL_RESOURCES);
     } finally {
-      if (!isBackground) setLoading(false);
+      setLoading(false);
     }
   };
 
