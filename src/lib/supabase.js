@@ -1,9 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://qlenbutdedkxscwrlniu.supabase.co';
+const RAW_SUPABASE_URL = 'https://qlenbutdedkxscwrlniu.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFsZW5idXRkZWRreHNjd3Jsbml1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MTg2ODcsImV4cCI6MjA5NDQ5NDY4N30.t9ThaW86Gls4EZalj2E6d8pIqsRHGFeTCmjAvviMlwI';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+const getSupabaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    // When deployed on Vercel or custom domain, route through the reverse proxy to bypass ISP DNS blocks
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      return `${window.location.origin}/supabase-api`;
+    }
+  }
+  return RAW_SUPABASE_URL;
+};
+
+export const supabase = createClient(getSupabaseUrl(), SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  },
   realtime: {
     enabled: false
   }

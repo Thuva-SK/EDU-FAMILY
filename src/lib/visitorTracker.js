@@ -52,6 +52,11 @@ const presenceListeners = new Set();
 const broadcastListeners = new Set();
 
 export const getLiveChannel = () => {
+  // When running on production via reverse proxy, avoid opening raw WebSockets to bypass ISP blocks
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return null;
+  }
+
   if (liveChannelInstance) {
     return liveChannelInstance;
   }
