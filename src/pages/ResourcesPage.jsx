@@ -75,29 +75,6 @@ export default function ResourcesPage() {
         if (!isBackground) setResources(INITIAL_RESOURCES);
       } else {
         setResources(data);
-
-        // Auto-fix legacy misclassified GK text items in database if needed
-        const misclassified = data.filter(r => 
-          r.category === 'GK' && 
-          (r.file_name === 'Document.pdf' || !r.file_name?.toLowerCase().endsWith('.txt')) && 
-          r.description && 
-          (!r.link || r.link.includes('dummy.pdf'))
-        );
-        if (misclassified.length > 0) {
-          misclassified.forEach(async (item) => {
-            try {
-              const words = (item.description || '').trim().split(/\s+/).filter(Boolean).length;
-              const slug = (item.title || 'GK_Content').trim().replace(/[^a-zA-Z0-9\u0B80-\u0BFF]/g, '_').slice(0, 35) || 'GK_Content';
-              await supabase.from('resources').update({
-                file_name: `${slug}.txt`,
-                file_path: 'text',
-                file_size: `${words} சொற்கள் (Text)`
-              }).eq('id', item.id);
-            } catch (e) {
-              // Ignore background update error
-            }
-          });
-        }
       }
     } catch (err) {
       if (!isBackground) setResources(INITIAL_RESOURCES);

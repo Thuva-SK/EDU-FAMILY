@@ -206,127 +206,99 @@ let isTracking = false;
 /**
  * Tracks a page visit when a user views a route in REAL TIME
  */
-export const trackPageView = async (pathname = '/') => {
-  let channel = null;
-
-  // Ensure presence channel is connected
-  try {
-    channel = getLiveChannel();
-  } catch (e) {}
-
+export const trackPageView = (pathname = '/') => {
   // Never count admin dashboard visits as student visitor traffic
   if (pathname.startsWith('/admin')) {
     return;
   }
 
-  // Update presence current path
-  if (channel) {
+  // Defer tracking slightly so it never blocks or slows down main content loading
+  setTimeout(async () => {
+    let channel = null;
     try {
-      channel.track({
-        online_at: new Date().toISOString(),
-        path: pathname,
-        visitor_id: getOrCreateVisitorId()
-      });
-    } catch (e) {}
-  }
-
-  // Throttle rapid reloads
-  if (isTracking) return;
-  isTracking = true;
-  setTimeout(() => { isTracking = false; }, 1200);
-
-  try {
-    const today = getTodayString();
-    
-    // Check if new unique visitor
-    const hadVisitorId = !!localStorage.getItem(VISITOR_ID_KEY);
-    getOrCreateVisitorId();
-    const isNewUnique = !hadVisitorId;
-
-    // Session check: only increment total visits once per session or route visit
-    const sessionKey = `${SESSION_VISIT_KEY}_${pathname}_${today}`;
-    sessionStorage.setItem(sessionKey, 'true');
-
-    // Get current stats
-    const stats = await getVisitorStats();
-
-    // Increment values
-    stats.total_visits = (Number(stats.total_visits) || 0) + 1;
-    if (isNewUnique) {
-      stats.unique_visitors = (Number(stats.unique_visitors) || 0) + 1;
-    }
-
-    // Today counter
-    if (stats.today_date === today) {
-      stats.today_visits = (Number(stats.today_visits) || 0) + 1;
-    } else {
-      stats.today_date = today;
-      stats.today_visits = 1;
-    }
-
-    // Daily breakdown
-    if (!stats.daily_stats) stats.daily_stats = {};
-    stats.daily_stats[today] = (Number(stats.daily_stats[today]) || 0) + 1;
-
-    // Page view breakdown
-    if (!stats.page_views) stats.page_views = {};
-    const cleanPath = pathname || '/';
-    stats.page_views[cleanPath] = (Number(stats.page_views[cleanPath]) || 0) + 1;
-    stats.last_updated = new Date().toISOString();
-
-    // Cache locally immediately
-    try {
-      localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify(stats));
+      channel = getLiveChannel();
     } catch (e) {}
 
-    // INSTANT REAL-TIME BROADCAST: Send live websocket message to all open admin screens (<50ms)!
     if (channel) {
       try {
-        channel.send({
-          type: 'broadcast',
-          event: 'visitor_count_updated',
-          payload: {
-            stats,
-            pathname: cleanPath,
-            isNewUnique,
-            timestamp: new Date().toISOString()
-          }
+        channel.track({
+          online_at: new Date().toISOString(),
+          path: pathname,
+          visitor_id: getOrCreateVisitorId()
         });
-      } catch (broadcastErr) {
-        console.warn('Realtime broadcast error:', broadcastErr);
-      }
+      } catch (e) {}
     }
 
-    // Save to Supabase portal_settings for permanent persistence
+    if (isTracking) return;
+    isTracking = true;
+    setTimeout(() => { isTracking = false; }, 2000);
+
     try {
-      const { data: existing } = await supabase
-        .from('portal_settings')
-        .select('id')
-        .eq('setting_key', 'website_visitor_stats')
-        .maybeSingle();
+      const today = getTodayString();
+      const hadVisitorId = !!localStorage.getItem(VISITOR_ID_KEY);
+      getOrCreateVisitorId();
+      const isNewUnique = !hadVisitorId;
 
-      const payload = {
-        setting_key: 'website_visitor_stats',
-        setting_value: JSON.stringify(stats),
-        updated_at: new Date().toISOString()
-      };
+      const sessionKey = `${SESSION_VISIT_KEY}_${pathname}_${today}`;
+      sessionStorage.setItem(sessionKey, 'true');
 
-      if (existing?.id) {
-        await supabase
-          .from('portal_settings')
-          .update(payload)
-          .eq('setting_key', 'website_visitor_stats');
-      } else {
-        await supabase
-          .from('portal_settings')
-          .insert([payload]);
+      const stats = await getVisitorStats();
+
+      stats.total_visits = (Number(stats.total_visits) || 0) + 1;
+      if (isNewUnique) {
+        stats.unique_visitors = (Number(stats.unique_visitors) || 0) + 1;
       }
-    } catch (dbErr) {
-      console.warn('Could not persist visitor stats to DB:', dbErr);
+
+      if (stats.today_date === today) {
+        stats.today_visits = (Number(stats.today_visits) || 0) + 1;
+      } else {
+        stats.today_date = today;
+        stats.today_visits = 1;
+      }
+
+      if (!stats.daily_stats) stats.daily_stats = {};
+      stats.daily_stats[today] = (Number(stats.daily_stats[today]) || 0) + 1;
+
+      if (!stats.page_views) stats.page_views = {};
+      const cleanPath = pathname || '/';
+      stats.page_views[cleanPath] = (Number(stats.page_views[cleanPath]) || 0) + 1;
+      stats.last_updated = new Date().toISOString();
+
+      try {
+        localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify(stats));
+      } catch (e) {}
+
+      if (channel) {
+        try {
+          channel.send({
+            type: 'broadcast',
+            event: 'visitor_count_updated',
+            payload: {
+              stats,
+              pathname: cleanPath,
+              isNewUnique,
+              timestamp: new Date().toISOString()
+            }
+          });
+        } catch (broadcastErr) {}
+      }
+
+      // Save to Supabase using a single atomic upsert
+      try {
+        await supabase
+          .from('portal_settings')
+          .upsert({
+            setting_key: 'website_visitor_stats',
+            setting_value: JSON.stringify(stats),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'setting_key' });
+      } catch (dbErr) {
+        // silent fallback
+      }
+    } catch (err) {
+      // silent fallback
     }
-  } catch (err) {
-    console.warn('Visitor tracking error:', err);
-  }
+  }, 1000);
 };
 
 /**

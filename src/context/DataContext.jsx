@@ -58,27 +58,13 @@ export function DataProvider({ children }) {
 
   const syncFromSupabase = useCallback(async () => {
     try {
-      let dbResources = null;
-      const resRes = await supabase.from("resources")
-        .select("*, auth.users(username)")
-        .order("created_at", { ascending: false });
-      if (resRes.error) {
-        const fallback = await supabase.from("resources").select("*");
-        dbResources = fallback.data;
-      } else {
-        dbResources = resRes.data;
-      }
+      const [resRes, newsRes] = await Promise.all([
+        supabase.from("resources").select("*").order("id", { ascending: false }),
+        supabase.from("news").select("*").order("id", { ascending: false })
+      ]);
 
-      let dbNews = null;
-      const newsRes = await supabase.from("news")
-        .select("*, auth.users(username)")
-        .order("created_at", { ascending: false });
-      if (newsRes.error) {
-        const fallback = await supabase.from("news").select("*");
-        dbNews = fallback.data;
-      } else {
-        dbNews = newsRes.data;
-      }
+      const dbResources = resRes.data;
+      const dbNews = newsRes.data;
 
       if (Array.isArray(dbResources)) {
         setResources((prev) => {

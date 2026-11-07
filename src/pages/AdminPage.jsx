@@ -148,15 +148,13 @@ export default function AdminPage() {
 
     loadAllAdminData();
 
-    loadAllAdminData();
-
-    // 1. Periodic background sync every 8 seconds as safety sync
+    // 1. Periodic background sync every 15 seconds as safety sync
     const livePollTimer = setInterval(async () => {
       try {
         const stats = await getVisitorStats();
-        setVisitorStats(stats);
+        if (stats) setVisitorStats(stats);
       } catch (e) {}
-    }, 8000);
+    }, 15000);
 
     return () => {
       clearInterval(livePollTimer);
@@ -165,10 +163,20 @@ export default function AdminPage() {
 
   const loadAllAdminData = async () => {
     try {
-      const { data: resData } = await supabase.from('resources').select('*').order('id', { ascending: false });
+      const [resRes, evtRes, annRes, inqRes, psRes, usersRes, statsRes] = await Promise.allSettled([
+        supabase.from('resources').select('*').order('id', { ascending: false }),
+        supabase.from('events').select('*').order('id', { ascending: false }),
+        supabase.from('announcements').select('*').order('id', { ascending: false }),
+        supabase.from('inquiries').select('*').order('submitted_at', { ascending: false }),
+        supabase.from('portal_settings').select('setting_value').eq('setting_key', 'admin_password_adminbabi@gmail.com').maybeSingle(),
+        supabase.from('users').select('*').order('created_at', { ascending: false }),
+        getVisitorStats()
+      ]);
+
+      const resData = resRes.status === 'fulfilled' ? resRes.value.data : null;
       setResources(resData || []);
 
-      const { data: evtData } = await supabase.from('events').select('*').order('id', { ascending: false });
+      const evtData = evtRes.status === 'fulfilled' ? evtRes.value.data : null;
       if (evtData) {
         setEvents(evtData.map(e => ({
           ...e,
@@ -178,7 +186,7 @@ export default function AdminPage() {
         setEvents([]);
       }
 
-      const { data: annData } = await supabase.from('announcements').select('*').order('id', { ascending: false });
+      const annData = annRes.status === 'fulfilled' ? annRes.value.data : null;
       if (annData) {
         setAnnouncements(annData.map(a => {
           const descMatch = a.title?.match(/<!--DESC:(.*?)-->/);
@@ -192,22 +200,16 @@ export default function AdminPage() {
         setAnnouncements([]);
       }
 
-      const { data: inqData } = await supabase.from('inquiries').select('*').order('submitted_at', { ascending: false });
+      const inqData = inqRes.status === 'fulfilled' ? inqRes.value.data : null;
       setInquiries(inqData || []);
 
       // Fetch users / admins
       let superPass = localStorage.getItem('edufamily_super_admin_pass') || 'edufamilyadmin-babi';
-      try {
-        const { data: psData } = await supabase
-          .from('portal_settings')
-          .select('setting_value')
-          .eq('setting_key', 'admin_password_adminbabi@gmail.com')
-          .maybeSingle();
-        if (psData?.setting_value) {
-          superPass = psData.setting_value;
-          localStorage.setItem('edufamily_super_admin_pass', superPass);
-        }
-      } catch (e) {}
+      const psData = psRes.status === 'fulfilled' ? psRes.value.data : null;
+      if (psData?.setting_value) {
+        superPass = psData.setting_value;
+        localStorage.setItem('edufamily_super_admin_pass', superPass);
+      }
 
       const superAdminDefault = {
         id: 1,
@@ -221,15 +223,11 @@ export default function AdminPage() {
       };
 
       let loadedAdmins = [];
-      try {
-        const { data: usersData, error: usersErr } = await supabase.from('users').select('*').order('created_at', { ascending: false });
-        if (usersData && usersData.length > 0 && !usersErr) {
-          const hasSuper = usersData.some(u => u.email?.toLowerCase() === 'adminbabi@gmail.com');
-          loadedAdmins = hasSuper ? usersData : [superAdminDefault, ...usersData];
-        } else {
-          loadedAdmins = [superAdminDefault];
-        }
-      } catch (err) {
+      const usersData = usersRes.status === 'fulfilled' ? usersRes.value.data : null;
+      if (usersData && usersData.length > 0) {
+        const hasSuper = usersData.some(u => u.email?.toLowerCase() === 'adminbabi@gmail.com');
+        loadedAdmins = hasSuper ? usersData : [superAdminDefault, ...usersData];
+      } else {
         loadedAdmins = [superAdminDefault];
       }
 
@@ -248,11 +246,8 @@ export default function AdminPage() {
       setAdmins(loadedAdmins);
 
       // Load visitor stats
-      try {
-        const stats = await getVisitorStats();
-        setVisitorStats(stats);
-      } catch (stErr) {
-        console.warn('Visitor stats error:', stErr);
+      if (statsRes.status === 'fulfilled' && statsRes.value) {
+        setVisitorStats(statsRes.value);
       }
     } catch (e) {
       setResources([]);
