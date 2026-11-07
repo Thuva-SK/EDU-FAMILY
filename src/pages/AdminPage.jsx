@@ -46,10 +46,7 @@ import { useToast } from '../context/ToastContext';
 import { 
   getVisitorStats, 
   updateVisitorBaseline, 
-  resetVisitorStatsToZero,
-  onLiveVisitorCount, 
-  onBroadcastVisit, 
-  getLiveChannel 
+  resetVisitorStatsToZero 
 } from '../lib/visitorTracker';
 
 export default function AdminPage() {
@@ -151,78 +148,9 @@ export default function AdminPage() {
 
     loadAllAdminData();
 
-    // Setup realtime subscriptions for all admin tables
-    const resChannel = supabase
-      .channel('admin-realtime-resources')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'resources' }, () => {
-        loadAllAdminData();
-      })
-      .subscribe();
+    loadAllAdminData();
 
-    const evtChannel = supabase
-      .channel('admin-realtime-events')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
-        loadAllAdminData();
-      })
-      .subscribe();
-
-    const annChannel = supabase
-      .channel('admin-realtime-announcements')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
-        loadAllAdminData();
-      })
-      .subscribe();
-
-    const inqChannel = supabase
-      .channel('admin-realtime-inquiries')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, (payload) => {
-        loadAllAdminData();
-        if (payload.eventType === 'INSERT') {
-          addToast('புதிய மாணவர் செய்தி பெறப்பட்டது! (New inquiry received)', 'info');
-        }
-      })
-      .subscribe();
-
-    const usersChannel = supabase
-      .channel('admin-realtime-users')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
-        loadAllAdminData();
-      })
-      .subscribe();
-
-    const statsChannel = supabase
-      .channel('admin-realtime-portal-settings')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'portal_settings' }, async () => {
-        const stats = await getVisitorStats();
-        setVisitorStats(stats);
-      })
-      .subscribe();
-
-    // 1. Listen to Live Realtime Presence (Active visitors browsing right now)
-    const unsubPresence = onLiveVisitorCount((count) => {
-      setLiveOnlineCount(count);
-    });
-
-    // 2. Listen to Live Realtime Broadcast (Whenever any visitor views a page)
-    const unsubBroadcast = onBroadcastVisit((payload) => {
-      if (payload?.stats) {
-        setVisitorStats(payload.stats);
-      }
-      if (payload?.pathname) {
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        setRecentLiveEvents(prev => [
-          {
-            id: Date.now() + Math.random(),
-            time: timeStr,
-            path: payload.pathname,
-            isNewUnique: payload.isNewUnique
-          },
-          ...prev.slice(0, 5)
-        ]);
-      }
-    });
-
-    // 3. Periodic background sync every 8 seconds as safety sync
+    // 1. Periodic background sync every 8 seconds as safety sync
     const livePollTimer = setInterval(async () => {
       try {
         const stats = await getVisitorStats();
@@ -231,14 +159,6 @@ export default function AdminPage() {
     }, 8000);
 
     return () => {
-      supabase.removeChannel(resChannel);
-      supabase.removeChannel(evtChannel);
-      supabase.removeChannel(annChannel);
-      supabase.removeChannel(inqChannel);
-      supabase.removeChannel(usersChannel);
-      supabase.removeChannel(statsChannel);
-      unsubPresence();
-      unsubBroadcast();
       clearInterval(livePollTimer);
     };
   }, [isAuthenticated]);

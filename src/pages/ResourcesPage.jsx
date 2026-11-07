@@ -37,18 +37,6 @@ export default function ResourcesPage() {
 
   useEffect(() => {
     fetchResources();
-
-    // Subscribe to realtime changes in resources
-    const subscription = supabase
-      .channel('public:resources')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'resources' }, () => {
-        fetchResources(true);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
   }, []);
 
   // Handle direct link redirection to a specific resource (e.g. /resources?id=123)

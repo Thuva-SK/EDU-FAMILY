@@ -1,9 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://putzagczushgbdtuagcq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_qbM-bvjZdsvh9DfGkX6UnQ_ExhlBU9r';
+const SUPABASE_URL = 'https://qlenbutdedkxscwrlniu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFsZW5idXRkZWRreHNjd3Jsbml1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MTg2ODcsImV4cCI6MjA5NDQ5NDY4N30.t9ThaW86Gls4EZalj2E6d8pIqsRHGFeTCmjAvviMlwI';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  realtime: {
+    enabled: false
+  }
+});
+
 
 // Fallback Initial Data
 export const INITIAL_RESOURCES = [

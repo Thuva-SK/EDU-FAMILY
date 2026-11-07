@@ -21,17 +21,6 @@ export default function AnnouncementsPage() {
 
   useEffect(() => {
     fetchAnnouncements();
-
-    const subscription = supabase
-      .channel('public:announcements')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
-        fetchAnnouncements(true);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
   }, []);
 
   const fetchAnnouncements = async (isBackground = false) => {

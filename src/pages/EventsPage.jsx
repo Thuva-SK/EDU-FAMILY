@@ -22,17 +22,6 @@ export default function EventsPage() {
 
   useEffect(() => {
     fetchEvents();
-
-    const subscription = supabase
-      .channel('public:events')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
-        fetchEvents(true);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
   }, []);
 
   const fetchEvents = async (isBackground = false) => {

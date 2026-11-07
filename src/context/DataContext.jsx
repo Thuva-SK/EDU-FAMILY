@@ -4,11 +4,11 @@ import { saveFile, getFile, getFileUrl } from '../services/indexedDb';
 
 const DataContext = createContext();
 
-const RESOURCE_KEY = "eduFamily.resources";
-const NEWS_KEY = "eduFamily.news";
-const STORAGE_EVENT = "eduFamily.updated";
-const LEGACY_DOMAIN = "https://edufamiy.vercel.app";
-const BUCKET_NAME = "resources";
+const RESOURCE_KEY = 'eduFamily.resources';
+const NEWS_KEY = 'eduFamily.news';
+const STORAGE_EVENT = 'eduFamily.updated';
+const LEGACY_DOMAIN = 'https://edufamiy.vercel.app';
+const BUCKET_NAME = 'resources';
 
 export function DataProvider({ children }) {
   const [resources, setResources] = useState(() => {
@@ -105,56 +105,70 @@ export function DataProvider({ children }) {
       console.warn("Supabase Sync Error:", err);
     }
   }, []);  useEffect(() => {
-      let cancelled = false;
+    let cancelled = false;
 
-      const cacheHasValidData = () => {
-        try {
-          const storedResources = localStorage.getItem(RESOURCE_KEY);
-          const storedNews = localStorage.getItem(NEWS_KEY);
-          if (!storedResources || !storedNews) return false;
-          const parsedResources = JSON.parse(storedResources);
-          const parsedNews = JSON.parse(storedNews);
-          if (!Array.isArray(parsedResources) || !Array.isArray(parsedNews)) return false;
-          if (parsedResources.length === 0 && parsedNews.length === 0) return false;
-          return true;
-        } catch {
+    const loadCachedState = () => {
+      try {
+        const cachedResources = localStorage.getItem(RESOURCE_KEY);
+        const cachedNews = localStorage.getItem(NEWS_KEY);
+
+        if (!cachedResources || !cachedNews) {
           return false;
         }
-      };
 
-      if (cacheHasValidData()) {
+        const parsedResources = JSON.parse(cachedResources);
+        const parsedNews = JSON.parse(cachedNews);
+
+        if (!Array.isArray(parsedResources) || !Array.isArray(parsedNews)) {
+          return false;
+        }
+
+        if (parsedResources.length === 0 && parsedNews.length === 0) {
+          return false;
+        }
+
+        if (Array.isArray(parsedResources)) setResources(parsedResources);
+        if (Array.isArray(parsedNews)) setNews(parsedNews);
+
+        return true;
+      } catch (err) {
+        console.warn("Storage sync parse error", err);
+        return false;
+      }
+    };
+
+    if (!loadCachedState()) {
+      syncFromSupabase().catch((err) => console.warn("Supabase Sync Error:", err));
+    }
+
+    const handleStorageChange = (e) => {
+      if (!e || [RESOURCE_KEY, NEWS_KEY, STORAGE_EVENT].includes(e.key)) {
         try {
-          const res = JSON.parse(localStorage.getItem(RESOURCE_KEY) || "[]");
-          const nws = JSON.parse(localStorage.getItem(NEWS_KEY) || "[]");
-          if (Array.isArray(res)) setResources(res);
-          if (Array.isArray(nws)) setNews(nws);
+          const cachedResources = localStorage.getItem(RESOURCE_KEY);
+          const cachedNews = localStorage.getItem(NEWS_KEY);
+
+          if (cachedResources) {
+            const parsedResources = JSON.parse(cachedResources);
+            if (Array.isArray(parsedResources)) setResources(parsedResources);
+          }
+
+          if (cachedNews) {
+            const parsedNews = JSON.parse(cachedNews);
+            if (Array.isArray(parsedNews)) setNews(parsedNews);
+          }
         } catch (err) {
           console.warn("Storage sync parse error", err);
         }
-      } else {
-        syncFromSupabase().catch((err) => console.warn("Supabase Sync Error:", err));
       }
+    };
 
-      const handleStorageChange = (e) => {
-        if (!e || [RESOURCE_KEY, NEWS_KEY, STORAGE_EVENT].includes(e.key)) {
-          try {
-            const res = JSON.parse(localStorage.getItem(RESOURCE_KEY) || "[]");
-            const nws = JSON.parse(localStorage.getItem(NEWS_KEY) || "[]");
-            if (Array.isArray(res)) setResources(res);
-            if (Array.isArray(nws)) setNews(nws);
-          } catch (err) {
-            console.warn("Storage sync parse error", err);
-          }
-        }
-      };
+    window.addEventListener("storage", handleStorageChange);
 
-      window.addEventListener("storage", handleStorageChange);
-
-      return () => {
-        cancelled = true;
-        window.removeEventListener("storage", handleStorageChange);
-      };
-    }, []);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
   }, [syncFromSupabase]);
 
   const saveResourcesState = async (newResources, deletedId = null) => {

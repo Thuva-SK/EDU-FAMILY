@@ -58,49 +58,58 @@ export const getLiveChannel = () => {
 
   const visitorId = getOrCreateVisitorId();
 
-  liveChannelInstance = supabase.channel('edufamily-live-visitors', {
-    config: {
-      presence: { key: visitorId },
-      broadcast: { ack: false }
-    }
-  });
+  if (!supabase.realtime) {
+    return null;
+  }
 
-  liveChannelInstance
-    .on('presence', { event: 'sync' }, () => {
-      const state = liveChannelInstance.presenceState();
-      // Count unique presence keys (active users currently on website)
-      const count = Object.keys(state).length;
-      presenceListeners.forEach(listener => {
-        try { listener(count, state); } catch (e) {}
-      });
-    })
-    .on('broadcast', { event: 'visitor_count_updated' }, ({ payload }) => {
-      if (payload) {
-        // Cache locally immediately
-        try {
-          localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify(payload.stats || payload));
-        } catch (e) {}
-
-        broadcastListeners.forEach(listener => {
-          try { listener(payload); } catch (e) {}
-        });
-      }
-    })
-    .subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        try {
-          await liveChannelInstance.track({
-            online_at: new Date().toISOString(),
-            path: typeof window !== 'undefined' ? window.location.pathname : '/',
-            visitor_id: visitorId
-          });
-        } catch (err) {
-          // silent fallback
-        }
+  try {
+    liveChannelInstance = supabase.channel('edufamily-live-visitors', {
+      config: {
+        presence: { key: visitorId },
+        broadcast: { ack: false }
       }
     });
 
-  return liveChannelInstance;
+    liveChannelInstance
+      .on('presence', { event: 'sync' }, () => {
+        const state = liveChannelInstance.presenceState();
+        // Count unique presence keys (active users currently on website)
+        const count = Object.keys(state).length;
+        presenceListeners.forEach(listener => {
+          try { listener(count, state); } catch (e) {}
+        });
+      })
+      .on('broadcast', { event: 'visitor_count_updated' }, ({ payload }) => {
+        if (payload) {
+          // Cache locally immediately
+          try {
+            localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify(payload.stats || payload));
+          } catch (e) {}
+
+          broadcastListeners.forEach(listener => {
+            try { listener(payload); } catch (e) {}
+          });
+        }
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await liveChannelInstance.track({
+              online_at: new Date().toISOString(),
+              path: typeof window !== 'undefined' ? window.location.pathname : '/',
+              visitor_id: visitorId
+            });
+          } catch (err) {
+            // silent fallback
+          }
+        }
+      });
+
+    return liveChannelInstance;
+  } catch (channelErr) {
+    console.warn('Live visitor channel init error:', channelErr);
+    return null;
+  }
 };
 
 /**
@@ -108,7 +117,9 @@ export const getLiveChannel = () => {
  */
 export const onLiveVisitorCount = (callback) => {
   presenceListeners.add(callback);
-  getLiveChannel(); // ensure channel is initialized
+  try {
+    getLiveChannel(); // ensure channel is initialized
+  } catch (e) {}
 
   return () => {
     presenceListeners.delete(callback);
@@ -120,7 +131,9 @@ export const onLiveVisitorCount = (callback) => {
  */
 export const onBroadcastVisit = (callback) => {
   broadcastListeners.add(callback);
-  getLiveChannel();
+  try {
+    getLiveChannel();
+  } catch (e) {}
 
   return () => {
     broadcastListeners.delete(callback);
@@ -189,8 +202,12 @@ let isTracking = false;
  * Tracks a page visit when a user views a route in REAL TIME
  */
 export const trackPageView = async (pathname = '/') => {
+  let channel = null;
+
   // Ensure presence channel is connected
-  const channel = getLiveChannel();
+  try {
+    channel = getLiveChannel();
+  } catch (e) {}
 
   // Never count admin dashboard visits as student visitor traffic
   if (pathname.startsWith('/admin')) {
@@ -258,8 +275,8 @@ export const trackPageView = async (pathname = '/') => {
     } catch (e) {}
 
     // INSTANT REAL-TIME BROADCAST: Send live websocket message to all open admin screens (<50ms)!
-    try {
-      if (channel) {
+    if (channel) {
+      try {
         channel.send({
           type: 'broadcast',
           event: 'visitor_count_updated',
@@ -270,9 +287,9 @@ export const trackPageView = async (pathname = '/') => {
             timestamp: new Date().toISOString()
           }
         });
+      } catch (broadcastErr) {
+        console.warn('Realtime broadcast error:', broadcastErr);
       }
-    } catch (broadcastErr) {
-      console.warn('Realtime broadcast error:', broadcastErr);
     }
 
     // Save to Supabase portal_settings for permanent persistence
@@ -320,15 +337,20 @@ export const updateVisitorBaseline = async (newStats) => {
     localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify(updated));
 
     // Broadcast change in realtime to all admins
+    let channel = null;
     try {
-      const channel = getLiveChannel();
-      if (channel) {
-        channel.send({
-          type: 'broadcast',
-          event: 'visitor_count_updated',
-          payload: { stats: updated, timestamp: new Date().toISOString() }
-        });
-      }
+      channel = getLiveChannel();
+    } catch (e) {}
+    if (!channel) {
+      return true;
+    }
+
+    try {
+      channel.send({
+        type: 'broadcast',
+        event: 'visitor_count_updated',
+        payload: { stats: updated, timestamp: new Date().toISOString() }
+      });
     } catch (e) {}
 
     const { data: existing } = await supabase
