@@ -10,7 +10,7 @@ import {
   X,
   Megaphone
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, INITIAL_ANNOUNCEMENTS } from '../lib/supabase';
 
 export default function AnnouncementsPage() {
   const [announcements, setAnnouncements] = useState([]);
@@ -31,8 +31,8 @@ export default function AnnouncementsPage() {
         .select('*')
         .order('id', { ascending: false });
 
-      if (error || !data) {
-        if (!isBackground) setAnnouncements([]);
+      if (error || !data || data.length === 0) {
+        if (!isBackground) setAnnouncements(INITIAL_ANNOUNCEMENTS);
       } else {
         const parsed = data.map((a) => {
           const descMatch = a.title?.match(/<!--DESC:(.*?)-->/);
@@ -45,7 +45,7 @@ export default function AnnouncementsPage() {
         setAnnouncements(parsed);
       }
     } catch (err) {
-      if (!isBackground) setAnnouncements([]);
+      if (!isBackground) setAnnouncements(INITIAL_ANNOUNCEMENTS);
     } finally {
       if (!isBackground) setLoading(false);
     }

@@ -18,7 +18,7 @@ import {
   Share2,
   Link as LinkIcon
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, INITIAL_RESOURCES } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 
 export default function ResourcesPage() {
@@ -71,8 +71,8 @@ export default function ResourcesPage() {
         .select('*')
         .order('id', { ascending: false });
 
-      if (error || !data) {
-        if (!isBackground) setResources([]);
+      if (error || !data || data.length === 0) {
+        if (!isBackground) setResources(INITIAL_RESOURCES);
       } else {
         setResources(data);
 
@@ -100,7 +100,7 @@ export default function ResourcesPage() {
         }
       }
     } catch (err) {
-      if (!isBackground) setResources([]);
+      if (!isBackground) setResources(INITIAL_RESOURCES);
     } finally {
       if (!isBackground) setLoading(false);
     }

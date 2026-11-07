@@ -10,7 +10,7 @@ import {
   Video
 } from 'lucide-react';
 import WhatsAppIcon from '../components/WhatsAppIcon';
-import { supabase } from '../lib/supabase';
+import { supabase, INITIAL_EVENTS } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 
 export default function EventsPage() {
@@ -32,13 +32,13 @@ export default function EventsPage() {
         .select('*')
         .order('id', { ascending: false });
 
-      if (error || !data) {
-        if (!isBackground) setEvents([]);
+      if (error || !data || data.length === 0) {
+        if (!isBackground) setEvents(INITIAL_EVENTS);
       } else {
         setEvents(data);
       }
     } catch (err) {
-      if (!isBackground) setEvents([]);
+      if (!isBackground) setEvents(INITIAL_EVENTS);
     } finally {
       if (!isBackground) setLoading(false);
     }
