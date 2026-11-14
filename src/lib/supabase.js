@@ -14,6 +14,28 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   }
 });
 
+/**
+ * Executes a Supabase query/operation with a configurable timeout (default 7s).
+ * Prevents requests from hanging for ~60s if the database or connection is slow.
+ */
+export const fetchWithTimeout = async (queryPromise, timeoutMs = 7000) => {
+  let timerId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timerId = setTimeout(() => {
+      reject(new Error('DATABASE_TIMEOUT'));
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    clearTimeout(timerId);
+    return result;
+  } catch (err) {
+    clearTimeout(timerId);
+    throw err;
+  }
+};
+
 
 // Fallback Initial Data
 export const INITIAL_RESOURCES = [

@@ -10,7 +10,7 @@ import {
   Video
 } from 'lucide-react';
 import WhatsAppIcon from '../components/WhatsAppIcon';
-import { supabase, INITIAL_EVENTS } from '../lib/supabase';
+import { supabase, INITIAL_EVENTS, fetchWithTimeout } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 
 export default function EventsPage() {
@@ -25,14 +25,8 @@ export default function EventsPage() {
     } catch (e) {}
     return INITIAL_EVENTS;
   });
-  const [loading, setLoading] = useState(() => {
-    try {
-      const cached = localStorage.getItem('edufamily_cached_events');
-      return !cached;
-    } catch (e) {
-      return false;
-    }
-  });
+  // Instant rendering: only show full loader if there is no data at all
+  const [loading, setLoading] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -43,20 +37,30 @@ export default function EventsPage() {
   const fetchEvents = async (isBackground = false) => {
     try {
       if (!isBackground && events.length === 0) setLoading(true);
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .order('id', { ascending: false });
+      const { data, error } = await fetchWithTimeout(
+        supabase
+          .from('events')
+          .select('*')
+          .order('id', { ascending: false }),
+        7000
+      );
 
       if (data && data.length > 0 && !error) {
         setEvents(data);
         try {
-          localStorage.setItem('edufamily_cached_events', JSON.stringify(data));
+          const safeData = data.map(evt => {
+            if (evt.cover_image && evt.cover_image.startsWith('data:') && evt.cover_image.length > 50000) {
+              return { ...evt, cover_image: null };
+            }
+            return evt;
+          });
+          localStorage.setItem('edufamily_cached_events', JSON.stringify(safeData));
         } catch (e) {}
       } else if ((!events || events.length === 0) && (error || !data)) {
         setEvents(INITIAL_EVENTS);
       }
     } catch (err) {
+      console.warn('Events fetch fallback:', err.message || err);
       if (!events || events.length === 0) setEvents(INITIAL_EVENTS);
     } finally {
       setLoading(false);
@@ -141,7 +145,7 @@ export default function EventsPage() {
           </div>
 
           {/* Grid Display */}
-          {loading ? (
+          {loading && events.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
               <p>நிகழ்வுகள் ஏற்றப்படுகின்றன...</p>
             </div>

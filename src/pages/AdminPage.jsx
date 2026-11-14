@@ -41,7 +41,7 @@ import {
   RotateCcw,
   Share2
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, fetchWithTimeout } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { 
   getVisitorStats, 
@@ -164,12 +164,12 @@ export default function AdminPage() {
   const loadAllAdminData = async () => {
     try {
       const [resRes, evtRes, annRes, inqRes, psRes, usersRes, statsRes] = await Promise.allSettled([
-        supabase.from('resources').select('*').order('id', { ascending: false }),
-        supabase.from('events').select('*').order('id', { ascending: false }),
-        supabase.from('announcements').select('*').order('id', { ascending: false }),
-        supabase.from('inquiries').select('*').order('submitted_at', { ascending: false }),
-        supabase.from('portal_settings').select('setting_value').eq('setting_key', 'admin_password_adminbabi@gmail.com').maybeSingle(),
-        supabase.from('users').select('*').order('created_at', { ascending: false }),
+        fetchWithTimeout(supabase.from('resources').select('*').order('id', { ascending: false }), 8000),
+        fetchWithTimeout(supabase.from('events').select('*').order('id', { ascending: false }), 8000),
+        fetchWithTimeout(supabase.from('announcements').select('*').order('id', { ascending: false }), 8000),
+        fetchWithTimeout(supabase.from('inquiries').select('*').order('submitted_at', { ascending: false }), 8000),
+        fetchWithTimeout(supabase.from('portal_settings').select('setting_value').eq('setting_key', 'admin_password_adminbabi@gmail.com').maybeSingle(), 8000),
+        fetchWithTimeout(supabase.from('users').select('*').order('created_at', { ascending: false }), 8000),
         getVisitorStats()
       ]);
 

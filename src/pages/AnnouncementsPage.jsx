@@ -10,7 +10,7 @@ import {
   X,
   Megaphone
 } from 'lucide-react';
-import { supabase, INITIAL_ANNOUNCEMENTS } from '../lib/supabase';
+import { supabase, INITIAL_ANNOUNCEMENTS, fetchWithTimeout } from '../lib/supabase';
 
 export default function AnnouncementsPage() {
   const [announcements, setAnnouncements] = useState(() => {
@@ -23,14 +23,8 @@ export default function AnnouncementsPage() {
     } catch (e) {}
     return INITIAL_ANNOUNCEMENTS;
   });
-  const [loading, setLoading] = useState(() => {
-    try {
-      const cached = localStorage.getItem('edufamily_cached_announcements');
-      return !cached;
-    } catch (e) {
-      return false;
-    }
-  });
+  // Instant rendering: only show full loader if there is no data at all
+  const [loading, setLoading] = useState(false);
   const [selectedPriority, setSelectedPriority] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnnouncement, setActiveAnnouncement] = useState(null);
@@ -42,10 +36,13 @@ export default function AnnouncementsPage() {
   const fetchAnnouncements = async (isBackground = false) => {
     try {
       if (!isBackground && announcements.length === 0) setLoading(true);
-      const { data, error } = await supabase
-        .from('announcements')
-        .select('*')
-        .order('id', { ascending: false });
+      const { data, error } = await fetchWithTimeout(
+        supabase
+          .from('announcements')
+          .select('*')
+          .order('id', { ascending: false }),
+        7000
+      );
 
       if (data && data.length > 0 && !error) {
         const parsed = data.map((a) => {
@@ -64,6 +61,7 @@ export default function AnnouncementsPage() {
         setAnnouncements(INITIAL_ANNOUNCEMENTS);
       }
     } catch (err) {
+      console.warn('Announcements fetch fallback:', err.message || err);
       if (!announcements || announcements.length === 0) setAnnouncements(INITIAL_ANNOUNCEMENTS);
     } finally {
       setLoading(false);
@@ -139,7 +137,7 @@ export default function AnnouncementsPage() {
           </div>
 
           {/* List Display */}
-          {loading ? (
+          {loading && announcements.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
               <p>அறிவிப்புகள் ஏற்றப்படுகின்றன...</p>
             </div>

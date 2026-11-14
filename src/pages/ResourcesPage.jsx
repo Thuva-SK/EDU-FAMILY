@@ -18,7 +18,7 @@ import {
   Share2,
   Link as LinkIcon
 } from 'lucide-react';
-import { supabase, INITIAL_RESOURCES } from '../lib/supabase';
+import { supabase, INITIAL_RESOURCES, fetchWithTimeout } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 
 export default function ResourcesPage() {
@@ -36,14 +36,8 @@ export default function ResourcesPage() {
     } catch (e) {}
     return INITIAL_RESOURCES;
   });
-  const [loading, setLoading] = useState(() => {
-    try {
-      const cached = localStorage.getItem('edufamily_cached_resources');
-      return !cached;
-    } catch (e) {
-      return false;
-    }
-  });
+  // Instant rendering: only show full loader if there is no data at all
+  const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalResource, setActiveModalResource] = useState(null);
@@ -82,20 +76,33 @@ export default function ResourcesPage() {
   const fetchResources = async (isBackground = false) => {
     try {
       if (!isBackground && resources.length === 0) setLoading(true);
-      const { data, error } = await supabase
-        .from('resources')
-        .select('*')
-        .order('id', { ascending: false });
+      const { data, error } = await fetchWithTimeout(
+        supabase
+          .from('resources')
+          .select('*')
+          .order('id', { ascending: false }),
+        7000
+      );
 
       if (data && data.length > 0 && !error) {
         setResources(data);
         try {
-          localStorage.setItem('edufamily_cached_resources', JSON.stringify(data));
-        } catch (e) {}
+          // Sanitize large base64 links before saving to localStorage to prevent QuotaExceededError
+          const safeData = data.map(item => {
+            if (item.link && item.link.startsWith('data:') && item.link.length > 50000) {
+              return { ...item, link: '' };
+            }
+            return item;
+          });
+          localStorage.setItem('edufamily_cached_resources', JSON.stringify(safeData));
+        } catch (e) {
+          console.warn('LocalStorage caching skipped:', e);
+        }
       } else if ((!resources || resources.length === 0) && (error || !data)) {
         setResources(INITIAL_RESOURCES);
       }
     } catch (err) {
+      console.warn('Resources fetch fallback:', err.message || err);
       if (!resources || resources.length === 0) setResources(INITIAL_RESOURCES);
     } finally {
       setLoading(false);
@@ -268,7 +275,24 @@ export default function ResourcesPage() {
     }
 
     let fileUrl = res.link || res.file_path;
-    if (!fileUrl) return;
+    if (!fileUrl) {
+      try {
+        addToast('கோப்பு இணைப்பு பெறப்படுகிறது... (Fetching link)', 'info');
+        const { data: freshRes } = await fetchWithTimeout(
+          supabase.from('resources').select('link, file_path').eq('id', res.id).single(),
+          5000
+        );
+        if (freshRes?.link || freshRes?.file_path) {
+          fileUrl = freshRes.link || freshRes.file_path;
+        }
+      } catch (err) {
+        console.warn('Could not fetch file link on demand:', err);
+      }
+    }
+    if (!fileUrl) {
+      addToast('கோப்பு இணைப்பு கிடைக்கவில்லை (File link unavailable)', 'error');
+      return;
+    }
 
     try {
       if (fileUrl.startsWith('data:')) {
@@ -352,7 +376,7 @@ export default function ResourcesPage() {
           </div>
 
           {/* Grid Display */}
-          {loading ? (
+          {loading && resources.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
               <p>கல்வி வளங்கள் ஏற்றப்படுகின்றன...</p>
             </div>

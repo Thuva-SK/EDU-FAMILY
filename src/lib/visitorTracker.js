@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, fetchWithTimeout } from './supabase';
 
 const STORAGE_CACHE_KEY = 'edufamily_visitor_stats_cache';
 const VISITOR_ID_KEY = 'edufamily_visitor_uuid';
@@ -153,11 +153,14 @@ export const getVisitorStats = async () => {
   let stats = null;
 
   try {
-    const { data, error } = await supabase
-      .from('portal_settings')
-      .select('setting_value')
-      .eq('setting_key', 'website_visitor_stats')
-      .maybeSingle();
+    const { data, error } = await fetchWithTimeout(
+      supabase
+        .from('portal_settings')
+        .select('setting_value')
+        .eq('setting_key', 'website_visitor_stats')
+        .maybeSingle(),
+      4000
+    );
 
     if (data?.setting_value && !error) {
       try {
@@ -283,22 +286,25 @@ export const trackPageView = (pathname = '/') => {
         } catch (broadcastErr) {}
       }
 
-      // Save to Supabase using a single atomic upsert
+      // Save to Supabase using a single atomic upsert with timeout
       try {
-        await supabase
-          .from('portal_settings')
-          .upsert({
-            setting_key: 'website_visitor_stats',
-            setting_value: JSON.stringify(stats),
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'setting_key' });
+        await fetchWithTimeout(
+          supabase
+            .from('portal_settings')
+            .upsert({
+              setting_key: 'website_visitor_stats',
+              setting_value: JSON.stringify(stats),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'setting_key' }),
+          4000
+        );
       } catch (dbErr) {
         // silent fallback
       }
     } catch (err) {
       // silent fallback
     }
-  }, 1000);
+  }, 3500);
 };
 
 /**
