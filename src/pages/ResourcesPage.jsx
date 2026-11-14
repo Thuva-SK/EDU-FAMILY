@@ -28,16 +28,22 @@ export default function ResourcesPage() {
 
   const [resources, setResources] = useState(() => {
     try {
-      const cached = localStorage.getItem('edufamily_cached_resources');
+      const cached = localStorage.getItem('edufamily_cached_resources_v2');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return INITIAL_RESOURCES;
+    return [];
   });
-  // Instant rendering: only show full loader if there is no data at all
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_resources_v2');
+      return !cached;
+    } catch (e) {
+      return true;
+    }
+  });
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalResource, setActiveModalResource] = useState(null);
@@ -76,34 +82,28 @@ export default function ResourcesPage() {
   const fetchResources = async (isBackground = false) => {
     try {
       if (!isBackground && resources.length === 0) setLoading(true);
+      // Fetch only metadata columns (excluding massive 16MB Base64 link column)
+      // This loads in ~2s (4.5KB) instead of 2.5 minutes!
       const { data, error } = await fetchWithTimeout(
         supabase
           .from('resources')
-          .select('*')
+          .select('id, title, category, file_name, file_path, file_size, description, downloads, status, date')
           .order('id', { ascending: false }),
-        7000
+        15000
       );
 
-      if (data && data.length > 0 && !error) {
+      if (data && !error) {
         setResources(data);
         try {
-          // Sanitize large base64 links before saving to localStorage to prevent QuotaExceededError
-          const safeData = data.map(item => {
-            if (item.link && item.link.startsWith('data:') && item.link.length > 50000) {
-              return { ...item, link: '' };
-            }
-            return item;
-          });
-          localStorage.setItem('edufamily_cached_resources', JSON.stringify(safeData));
+          localStorage.setItem('edufamily_cached_resources_v2', JSON.stringify(data));
         } catch (e) {
           console.warn('LocalStorage caching skipped:', e);
         }
-      } else if ((!resources || resources.length === 0) && (error || !data)) {
-        setResources(INITIAL_RESOURCES);
+      } else if (error) {
+        console.error('Supabase fetch error:', error);
       }
     } catch (err) {
-      console.warn('Resources fetch fallback:', err.message || err);
-      if (!resources || resources.length === 0) setResources(INITIAL_RESOURCES);
+      console.warn('Resources fetch error:', err.message || err);
     } finally {
       setLoading(false);
     }
@@ -139,23 +139,19 @@ export default function ResourcesPage() {
       res.link?.startsWith('data:text')
     ) return true;
 
-    // 2. Check if resource has a real external/uploaded PDF file
-    const hasRealPdf = 
-      res.link && 
-      !res.link.includes('dummy.pdf') && 
-      !res.link.startsWith('data:text') &&
-      res.file_name && 
-      !res.file_name.toLowerCase().includes('document.pdf') && 
-      res.file_name.toLowerCase().endsWith('.pdf');
+    // 2. Check if resource has a real PDF file
+    if (res.file_name && !res.file_name.toLowerCase().includes('document.pdf') && res.file_name.toLowerCase().endsWith('.pdf')) {
+      return false;
+    }
 
-    // 3. GK category resources without a real uploaded PDF are text content
-    if (res.category?.toLowerCase() === 'gk' && !hasRealPdf) {
+    // 3. GK category resources without a PDF are text content
+    if (res.category?.toLowerCase() === 'gk') {
       return true;
     }
 
-    // 4. Any resource with formatted quiz text or questions in description and no real PDF
+    // 4. Any resource with formatted quiz text or questions in description
     const textDesc = res.description || '';
-    if (!hasRealPdf && (textDesc.includes('\n') || textDesc.includes('👉') || textDesc.includes('1️⃣') || textDesc.length > 80)) {
+    if (textDesc.includes('\n') || textDesc.includes('👉') || textDesc.includes('1️⃣') || textDesc.length > 80) {
       return true;
     }
 
@@ -274,22 +270,25 @@ export default function ResourcesPage() {
       return;
     }
 
-    let fileUrl = res.link || res.file_path;
-    if (!fileUrl) {
+    let fileUrl = res.link;
+    if (!fileUrl || (!fileUrl.startsWith('http') && !fileUrl.startsWith('data:'))) {
       try {
-        addToast('கோப்பு இணைப்பு பெறப்படுகிறது... (Fetching link)', 'info');
+        addToast('கோப்பு பெறப்படுகிறது... (Fetching file)', 'info');
         const { data: freshRes } = await fetchWithTimeout(
           supabase.from('resources').select('link, file_path').eq('id', res.id).single(),
-          5000
+          30000
         );
-        if (freshRes?.link || freshRes?.file_path) {
-          fileUrl = freshRes.link || freshRes.file_path;
+        if (freshRes?.link && (freshRes.link.startsWith('http') || freshRes.link.startsWith('data:'))) {
+          fileUrl = freshRes.link;
+          setResources(prev => prev.map(item => item.id === res.id ? { ...item, link: freshRes.link } : item));
+        } else if (freshRes?.file_path && freshRes.file_path.startsWith('http')) {
+          fileUrl = freshRes.file_path;
         }
       } catch (err) {
         console.warn('Could not fetch file link on demand:', err);
       }
     }
-    if (!fileUrl) {
+    if (!fileUrl || (!fileUrl.startsWith('http') && !fileUrl.startsWith('data:'))) {
       addToast('கோப்பு இணைப்பு கிடைக்கவில்லை (File link unavailable)', 'error');
       return;
     }

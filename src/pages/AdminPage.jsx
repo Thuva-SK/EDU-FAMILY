@@ -164,7 +164,7 @@ export default function AdminPage() {
   const loadAllAdminData = async () => {
     try {
       const [resRes, evtRes, annRes, inqRes, psRes, usersRes, statsRes] = await Promise.allSettled([
-        fetchWithTimeout(supabase.from('resources').select('*').order('id', { ascending: false }), 8000),
+        fetchWithTimeout(supabase.from('resources').select('id, title, category, file_name, file_path, file_size, description, downloads, status, date').order('id', { ascending: false }), 15000),
         fetchWithTimeout(supabase.from('events').select('*').order('id', { ascending: false }), 8000),
         fetchWithTimeout(supabase.from('announcements').select('*').order('id', { ascending: false }), 8000),
         fetchWithTimeout(supabase.from('inquiries').select('*').order('submitted_at', { ascending: false }), 8000),

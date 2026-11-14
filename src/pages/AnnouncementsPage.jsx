@@ -15,16 +15,22 @@ import { supabase, INITIAL_ANNOUNCEMENTS, fetchWithTimeout } from '../lib/supaba
 export default function AnnouncementsPage() {
   const [announcements, setAnnouncements] = useState(() => {
     try {
-      const cached = localStorage.getItem('edufamily_cached_announcements');
+      const cached = localStorage.getItem('edufamily_cached_announcements_v2');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {}
-    return INITIAL_ANNOUNCEMENTS;
+    return [];
   });
-  // Instant rendering: only show full loader if there is no data at all
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_announcements_v2');
+      return !cached;
+    } catch (e) {
+      return true;
+    }
+  });
   const [selectedPriority, setSelectedPriority] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnnouncement, setActiveAnnouncement] = useState(null);
@@ -41,10 +47,10 @@ export default function AnnouncementsPage() {
           .from('announcements')
           .select('*')
           .order('id', { ascending: false }),
-        7000
+        10000
       );
 
-      if (data && data.length > 0 && !error) {
+      if (data && !error) {
         const parsed = data.map((a) => {
           const descMatch = a.title?.match(/<!--DESC:(.*?)-->/);
           return {
@@ -55,14 +61,11 @@ export default function AnnouncementsPage() {
         });
         setAnnouncements(parsed);
         try {
-          localStorage.setItem('edufamily_cached_announcements', JSON.stringify(parsed));
+          localStorage.setItem('edufamily_cached_announcements_v2', JSON.stringify(parsed));
         } catch (e) {}
-      } else if ((!announcements || announcements.length === 0) && (error || !data)) {
-        setAnnouncements(INITIAL_ANNOUNCEMENTS);
       }
     } catch (err) {
-      console.warn('Announcements fetch fallback:', err.message || err);
-      if (!announcements || announcements.length === 0) setAnnouncements(INITIAL_ANNOUNCEMENTS);
+      console.warn('Announcements fetch error:', err.message || err);
     } finally {
       setLoading(false);
     }

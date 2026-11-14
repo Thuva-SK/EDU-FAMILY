@@ -17,16 +17,22 @@ export default function EventsPage() {
   const { addToast } = useToast();
   const [events, setEvents] = useState(() => {
     try {
-      const cached = localStorage.getItem('edufamily_cached_events');
+      const cached = localStorage.getItem('edufamily_cached_events_v2');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {}
-    return INITIAL_EVENTS;
+    return [];
   });
-  // Instant rendering: only show full loader if there is no data at all
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('edufamily_cached_events_v2');
+      return !cached;
+    } catch (e) {
+      return true;
+    }
+  });
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -42,10 +48,10 @@ export default function EventsPage() {
           .from('events')
           .select('*')
           .order('id', { ascending: false }),
-        7000
+        10000
       );
 
-      if (data && data.length > 0 && !error) {
+      if (data && !error) {
         setEvents(data);
         try {
           const safeData = data.map(evt => {
@@ -54,14 +60,11 @@ export default function EventsPage() {
             }
             return evt;
           });
-          localStorage.setItem('edufamily_cached_events', JSON.stringify(safeData));
+          localStorage.setItem('edufamily_cached_events_v2', JSON.stringify(safeData));
         } catch (e) {}
-      } else if ((!events || events.length === 0) && (error || !data)) {
-        setEvents(INITIAL_EVENTS);
       }
     } catch (err) {
-      console.warn('Events fetch fallback:', err.message || err);
-      if (!events || events.length === 0) setEvents(INITIAL_EVENTS);
+      console.warn('Events fetch error:', err.message || err);
     } finally {
       setLoading(false);
     }
